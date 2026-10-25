@@ -4,6 +4,7 @@
 # 조작하는 쪽(.53)에서:  $env:REA_ADAPTER_TOKEN="<토큰>"; rea-adapter invoke-com ... --host <이 노드>
 param([string]$Token, [int]$Port = 47817)
 $ErrorActionPreference = "Stop"
+$AgentVersion = "2026-10-25.3-uia"  # 조작하는 쪽이 /health로 버전을 확인한다
 if (-not $Token) { Write-Error "토큰이 필요합니다: -Token <값>"; exit 1 }
 
 # 조작 하나를 별도 STA 런스페이스에서 시간제한을 두고 실행한다.
@@ -134,7 +135,7 @@ catch {
   foreach ($p in $prefixes) { Write-Host "  netsh http add urlacl url=$p user=$env:USERNAME" }
   throw
 }
-Write-Host "REA 에이전트 실행 중: $($prefixes -join ', ')"
+Write-Host "REA 에이전트 실행 중 (버전 $AgentVersion): $($prefixes -join ', ')"
 Write-Host "조작하는 쪽에서: rea-adapter invoke-com ... --host $(if($tsIp){$tsIp}else{'127.0.0.1'})  (토큰 일치 필요)"
 
 while ($listener.IsListening) {
@@ -145,7 +146,7 @@ while ($listener.IsListening) {
     if ($req.Headers["x-rea-token"] -ne $Token) {
       $resp.StatusCode = 401; $out = @{ error = "토큰이 올바르지 않습니다." }
     } elseif ($req.Url.AbsolutePath -eq "/health") {
-      $out = @{ ok = $true; node = $env:COMPUTERNAME }
+      $out = @{ ok = $true; node = $env:COMPUTERNAME; version = $AgentVersion; capabilities = @("com", "window", "uia") }
     } elseif ($req.Url.AbsolutePath -eq "/invoke" -and $req.HttpMethod -eq "POST") {
       $body = (New-Object IO.StreamReader($req.InputStream, $req.ContentEncoding)).ReadToEnd()
       $parsed = $body | ConvertFrom-Json
