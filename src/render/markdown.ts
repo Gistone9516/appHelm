@@ -55,6 +55,17 @@ export function automationLines(doc: OperationDoc): string[] {
   if (a.cli.length > 4) lines.push(`- 명령줄 ${a.cli.length - 4}개 더 (JSON automation.cli)`);
   if (a.protocols.length) lines.push(`- URL 프로토콜: ${a.protocols.slice(0, 6).map((p) => `\`${p.scheme}:\``).join(", ")}`);
   if (a.ports.length) lines.push(`- 열린 TCP 포트: ${a.ports.slice(0, 6).map((p) => `${p.address}:${p.port}`).join(", ")} (연결은 확인하지 않음)`);
+  const rt = doc.runtime as { package?: { productName?: string; name?: string; main?: string }; asar?: string } | undefined;
+  if (rt?.package) {
+    const name = rt.package.productName ?? rt.package.name;
+    lines.push(`- Electron 앱: ${name ?? "이름 미상"}${rt.package.main ? `, 진입 \`${rt.package.main}\`` : ""}${rt.asar ? " (app.asar)" : ""}`);
+    lines.push("  - 화면 조작은 `--remote-debugging-port`로 실행한 뒤 CDP로 붙어야 합니다 (4차).");
+  }
+  for (const f of doc.ui.forms.slice(0, 3)) {
+    const withHandlers = f.controls.filter((c) => c.handlers.length).length;
+    lines.push(`- 폼 \`${f.className}\`${f.title ? ` "${f.title}"` : ""} (${f.framework}): 컨트롤 ${f.controls.length}개, 이벤트 처리기 ${withHandlers}개`);
+  }
+  if (doc.ui.forms.length > 3) lines.push(`- 폼 ${doc.ui.forms.length - 3}개 더 (JSON ui.forms)`);
   const live = doc.ui.live;
   if (live) lines.push(`- 실행 중 화면: 창 ${live.windows.map((w) => `"${w}"`).slice(0, 3).join(", ")}, 요소 ${live.elements.length}개${live.truncated ? " (일부)" : ""} (JSON ui.live)`);
   return lines.length ? ["", "## 자동화 창구", ...lines] : [];

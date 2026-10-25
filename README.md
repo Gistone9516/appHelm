@@ -35,22 +35,25 @@ npm run e2e
 ## 구조
 
 ```
-_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-21, 실측 사실 F-1~F-12). 코드와 충돌하면 이 문서가 이긴다
+_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-24, 실측 사실 F-1~F-15). 코드와 충돌하면 이 문서가 이긴다
 bin/rea-adapter.mjs    실행 진입점 (tsx로 소스를 바로 실행)
 src/core/              공유 타입, 부작용 허용 판정(IF-2), 파이프라인 (수집원 동시 실행)
 src/pe/                PE 헤더·import 표 읽기, MUI 파일 탐색
-src/decoders/          메뉴·단축키·문자열·버전·대화상자 리소스 바이트 해석
+src/decoders/          리소스 바이트 해석: 메뉴·단축키·문자열·버전·대화상자, Delphi DFM, Electron asar
 src/rea-bridge/        REA CLI 실행(버전 6.7.0 고정)과 출력 해석
 src/ps/                PowerShell 5.1 스크립트 실행기와 스크립트(scripts/*.ps1, ASCII 전용)
 src/session/           화면이 필요한 스크립트를 사용자 세션에서 실행 (서비스 세션이면 1회용 예약 작업)
 src/collectors/        수집원
-  pe-resources/          메뉴·단축키·대화상자·문자열·버전 리소스
+  pe-resources/          메뉴·단축키·대화상자·문자열·버전 리소스 (네이티브)
   pe-imports/            import 기반 기능 추정
   registry-verbs/        셸 동사·연결 프로그램·URL 프로토콜·App Paths
   com-typelib/           COM 서버와 TypeLib의 메서드·속성
   local-ports/           실행 중인 대상이 연 TCP 포트 (연결은 하지 않음)
+  dotnet/                .NET WinForms 폼 추정 (REA managed-members)
+  delphi-dfm/            Delphi 이진 폼(DFM) 해석
+  electron-js/           Electron 앱 package.json과 fuse (asar에서 직접)
   uia-snapshot/          실행 중인 창의 UI Automation 요소 (--live)
-src/probe/             대상 판별 (경로나 이름 → 실행 파일, 종류, MUI)
+src/probe/             대상 판별 (경로나 이름 → 실행 파일, 종류, MUI, Electron 위치)
 src/merge/             수집 결과 → 조작 문서 (같은 명령 합치기, 이름 결정, 자동화 창구 정리)
 src/render/            Markdown 요약
 src/cli/               rea-adapter map 명령
@@ -64,6 +67,7 @@ test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 - **MUI 파일을 따라간다 (IF-7).** Windows 기본 앱의 메뉴는 `ko-KR\notepad.exe.mui` 같은 별도 파일에 있다. 이걸 안 보면 메뉴가 통째로 빠진다.
 - **같은 명령은 하나의 작업으로 합친다 (IF-10, IF-15).** 메뉴 항목과 단축키를 명령 ID로 묶는다. 단축키 표끼리 같은 키를 다른 명령에 연결하면, 소수 쪽 표를 특정 모드용으로 분류해 기본 단축키에서 뺀다. 메모장의 SLIPUPACC 표가 Ctrl+C를 "끝내기"에 연결하고 있어서 생긴 규칙이다.
 - **COM은 서버의 기본 인터페이스를 앞세운다 (IF-17).** 서버 CLSID와 같은 coclass의 기본 인터페이스에서 예시 멤버를 뽑는다. 숨김 형식도 coclass가 가리키면 남긴다. IE의 IWebBrowser2가 `hidden`이라 일괄 제외하면 핵심 인터페이스가 빠졌다(F-12).
+- **런타임마다 UI 정의가 있는 곳이 다르다 (IF-22~IF-24).** .NET은 `InitializeComponent`의 호출·필드 순서로 폼을 추정하고(REA가 IL 오프셋을 안 줘서 추정이므로 신뢰도 0.5, F-13), Delphi는 RCDATA의 이진 폼(TPF0)을 직접 해석하며, Electron은 asar에서 package.json과 fuse만 읽는다. 전체 JS 분석은 느리고 출력이 커서(F-15) 하지 않는다.
 - **화면 수집은 사용자 세션에서 한다 (IF-14, IF-20).** 서비스 세션(Session 0)에서는 창이 보이지 않는다(F-7). 그래서 1회용 예약 작업으로 사용자 세션에서 스크립트를 돌리고, 끝나면 작업을 지운다.
 - **PowerShell과는 파일로 주고받는다 (IF-21).** 스크립트는 ASCII만 쓰고, 입출력은 UTF-8 JSON 파일이다. PowerShell 5.1이 원소 1개 배열을 값으로 풀어 버리므로(F-11), 배열은 TypeScript 경계에서 `asArray()`로 맞춘다.
 - **수집원은 실패해도 예외를 던지지 않는다 (IF-1).** 일부가 실패해도 나머지 결과로 문서를 만들고, 실패는 "한계"에 적는다.
@@ -73,9 +77,10 @@ test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 
 - 1차 사이클 완료: 네이티브 exe의 메뉴, 단축키, 대화상자, 버전, import 기반 기능. 메모장, 레지스트리 편집기, 그림판으로 검증했다.
 - 2차 사이클 완료: 셸 동사·URL 프로토콜·명령줄, COM TypeLib, 열린 포트, 사용자 세션의 UIA. 메모장, Internet Explorer(COM), 탐색기(UIA)로 검증했다.
+- 3차 사이클 완료: .NET WinForms 폼, Delphi DFM, Electron(package.json·fuse). 직접 빌드한 WinForms 앱, Git 설치 제거기(Delphi), Discord(Electron)로 검증했다.
 - 다음 사이클:
-  - 3차: .NET, Delphi 폼, Electron
-  - 4차: MCP 서버와 실행 계층
+  - 4차: MCP 서버(`map_program`, `get_operation_doc`)와 실행 계층(COM 호출·WM_COMMAND·CDP)
 - 보류:
   - 대상을 직접 실행하는 수집(`cli-help`, `--allow-launch`로 자동 실행 후 UIA)은 부작용이 있어 따로 결정한다.
+  - .NET 폼 글자 추정은 신뢰도가 낮다(IL 오프셋 부재). WPF(XAML/BAML)는 아직 해석하지 않는다.
   - 메뉴를 펼쳐야 보이는 하위 UIA 요소는 읽지 않는다.

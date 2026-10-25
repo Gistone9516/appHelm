@@ -7,6 +7,9 @@ import type { CollectorContext } from "../core/types.ts";
 import { peImports } from "../collectors/pe-imports/index.ts";
 import { peResources } from "../collectors/pe-resources/index.ts";
 import { comTypelib } from "../collectors/com-typelib/index.ts";
+import { delphiDfm } from "../collectors/delphi-dfm/index.ts";
+import { dotnet } from "../collectors/dotnet/index.ts";
+import { electronJs } from "../collectors/electron-js/index.ts";
 import { localPorts } from "../collectors/local-ports/index.ts";
 import { registryVerbs } from "../collectors/registry-verbs/index.ts";
 import { uiaSnapshot } from "../collectors/uia-snapshot/index.ts";
@@ -89,7 +92,7 @@ async function main(): Promise<number> {
     rea: createReaRunner({ workDir, timeoutMs: args.timeoutMs, log }),
     log,
   };
-  const collectors = [peResources, peImports, registryVerbs, comTypelib, localPorts, uiaSnapshot];
+  const collectors = [peResources, peImports, registryVerbs, comTypelib, localPorts, dotnet, delphiDfm, electronJs, uiaSnapshot];
   const result = await mapProgram(args.target!, ctx, { probe: createProbe(args.lang), collectors, merge });
   if ("error" in result) {
     for (const l of result.error) process.stderr.write(`오류: ${l.message}${l.hint ? ` (${l.hint})` : ""}\n`);

@@ -13,6 +13,13 @@ export interface Target {
   familyEvidence: string[];
   pe?: PeInfo;
   muiPaths: string[];
+  electron?: ElectronApp;
+}
+
+export interface ElectronApp {
+  resourcesDir: string;
+  asar?: string;
+  appDir?: string;
 }
 
 export interface PeInfo {
@@ -26,7 +33,7 @@ export interface PeInfo {
 export type EvidenceKind =
   | "menu-item" | "dialog" | "dialog-control" | "accelerator" | "string" | "version"
   | "import-capability" | "com-server" | "cli-arg" | "shell-verb" | "url-protocol"
-  | "ui-element" | "listen-port" | "http-endpoint" | "dotnet-member" | "js-ipc" | "form-component";
+  | "ui-element" | "listen-port" | "http-endpoint" | "form" | "electron-app";
 
 export interface Locator {
   file: string;
@@ -161,6 +168,22 @@ export interface PortDoc {
   port: number;
 }
 
+export interface FormDoc {
+  framework: "winforms" | "wpf" | "delphi-vcl";
+  className: string;
+  title?: string;
+  controls: FormControl[];
+}
+
+export interface FormControl {
+  name: string;
+  className?: string;
+  text?: string;
+  shortcut?: string;
+  handlers: { event: string; method: string }[];
+  parent?: string;
+}
+
 export interface LiveUi {
   windows: string[];
   elements: UiElement[];
@@ -187,8 +210,9 @@ export interface OperationDoc {
     counts: Record<string, number>;
   };
   operations: Operation[];
-  ui: { menus: MenuNode[]; dialogs: DialogDoc[]; live?: LiveUi };
+  ui: { menus: MenuNode[]; dialogs: DialogDoc[]; forms: FormDoc[]; live?: LiveUi };
   automation: AutomationDoc;
+  runtime?: Record<string, unknown>;
   capabilities: string[];
   version: Record<string, string>;
   limitations: Limitation[];

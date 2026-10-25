@@ -80,6 +80,25 @@ test("IF-20/IF-14: 실행 중인 explorer의 화면 요소 (--live, 사용자 �
   assert.ok(doc.ui.live && doc.ui.live.elements.length > 0, JSON.stringify(doc.limitations));
 });
 
+const sample = "test\\fixtures\\build\\SampleApp.exe";
+test("IF-22: 빌드한 WinForms 앱의 폼과 처리기 (.NET)", { skip: skip || !existsSync(sample) }, () => {
+  const { doc } = mapApp(sample, "SampleApp");
+  assert.equal(doc.target.family, "dotnet");
+  const form = doc.ui.forms.find((f) => f.className === "ReaAdapterFixture.MainForm");
+  assert.ok(form, JSON.stringify(doc.ui.forms.map((f) => f.className)));
+  const btn = form.controls.find((c) => c.name === "btnRun");
+  assert.ok(btn?.handlers.some((h) => h.method === "btnRun_Click"));
+});
+
+const gitUnins = "C:\\Program Files\\Git\\unins000.exe";
+test("IF-23: Delphi 폼 해석 (Git 설치 제거기)", { skip: skip || !existsSync(gitUnins) }, () => {
+  const { doc } = mapApp(gitUnins, "unins000");
+  assert.equal(doc.target.family, "delphi");
+  const wizard = doc.ui.forms.find((f) => f.className === "TWizardForm");
+  assert.ok(wizard, JSON.stringify(doc.ui.forms.map((f) => f.className)));
+  assert.ok(wizard.controls.some((c) => c.name === "FNextButton" && c.handlers.some((h) => h.method === "NextButtonClick")));
+});
+
 test("IF-8: PE import 표 읽기 (notepad.exe)", { skip }, () => {
   const imports = readImports(parsePe(new Uint8Array(readFileSync("C:\\Windows\\System32\\notepad.exe"))));
   assert.ok(imports.length > 5);

@@ -1,4 +1,5 @@
 node_modules/
 dist/
 rea-adapter-out/
+test/fixtures/build/
 *.log

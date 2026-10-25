@@ -1,5 +1,5 @@
 // 대상 판별: 사용자가 넘긴 경로나 이름을 Target으로 바꾼다.
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import type { Limitation, Target, TargetFamily } from "../core/types.ts";
 import { findMuiPaths } from "../pe/mui.ts";
@@ -27,6 +27,42 @@ export function resolveExecutable(input: string): string | null {
   return null;
 }
 
+const DVCLAL = Buffer.from("DVCLAL", "utf16le");
+
+/** DVCLAL 리소스 이름은 Delphi/C++Builder 실행 파일의 표지다. */
+export function hasDelphiMarker(bytes: Buffer): boolean {
+  return bytes.indexOf(DVCLAL) >= 0;
+}
+
+/** IF-24: exe 폴더 또는 바로 아래 하위 폴더(최신)의 resources\app(.asar). */
+export function findElectron(exePath: string): Target["electron"] {
+  const base = dirname(exePath);
+  const candidates = [base];
+  try {
+    const subs = readdirSync(base)
+      .map((d) => join(base, d))
+      .filter((p) => {
+        try {
+          return statSync(p).isDirectory() && existsSync(join(p, "resources"));
+        } catch {
+          return false;
+        }
+      })
+      .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+    candidates.push(...subs);
+  } catch {
+    // 폴더를 못 읽으면 base만 본다
+  }
+  for (const root of candidates) {
+    const resources = join(root, "resources");
+    const asar = join(resources, "app.asar");
+    const appDir = join(resources, "app");
+    if (existsSync(asar)) return { resourcesDir: resources, asar };
+    if (existsSync(join(appDir, "package.json"))) return { resourcesDir: resources, appDir };
+  }
+  return undefined;
+}
+
 export function createProbe(lang: string) {
   return async function probe(input: string): Promise<{ target: Target | null; limitations: Limitation[] }> {
     const path = resolveExecutable(input);
@@ -42,14 +78,19 @@ export function createProbe(lang: string) {
     }
     const familyEvidence: string[] = [];
     let family: TargetFamily = "native";
+    const electron = findElectron(path);
+    const bytes = readFileSync(path);
     if (pe.info.isDotNet) {
       family = "dotnet";
       familyEvidence.push("CLR 데이터 디렉터리가 있음");
-    } else if (existsSync(join(dirname(path), "resources", "app.asar"))) {
+    } else if (electron) {
       family = "electron";
-      familyEvidence.push("resources\\app.asar가 있음");
+      familyEvidence.push(`${electron.asar ? "resources\\app.asar" : "resources\\app"}가 있음`);
+    } else if (hasDelphiMarker(bytes)) {
+      family = "delphi";
+      familyEvidence.push("DVCLAL 리소스 표지가 있음 (Delphi/C++Builder)");
     } else {
-      familyEvidence.push("CLR·Electron 표지 없음 → 네이티브로 판단");
+      familyEvidence.push("CLR·Electron·Delphi 표지 없음 → 네이티브로 판단");
     }
     const target: Target = {
       input,
@@ -59,6 +100,7 @@ export function createProbe(lang: string) {
       familyEvidence,
       pe: pe.info,
       muiPaths: findMuiPaths(path, lang),
+      ...(electron ? { electron } : {}),
     };
     return { target, limitations: [] };
   };

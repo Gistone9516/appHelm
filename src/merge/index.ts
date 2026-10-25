@@ -1,7 +1,7 @@
 // Evidence[] → OperationDoc. 같은 명령의 여러 출처를 하나의 작업으로 합친다 (IF-5, IF-9, IF-10).
 import { knownCommandName, titleFromString } from "./knownIds.ts";
 import type {
-  AutomationDoc, CliDoc, ComServerDoc, DialogDoc, Evidence, InvokeHint, InvokeVia, Limitation, LiveUi, MenuNode, Operation, OperationDoc, PortDoc, Target,
+  AutomationDoc, CliDoc, ComServerDoc, DialogDoc, Evidence, FormDoc, InvokeHint, InvokeVia, Limitation, LiveUi, MenuNode, Operation, OperationDoc, PortDoc, Target,
 } from "../core/types.ts";
 
 export const INVOKE_ORDER: InvokeVia[] = ["com", "cli", "wm_command", "shortcut", "menu", "uia", "http", "shell"];
@@ -198,6 +198,30 @@ export function merge(target: Target, evidence: Evidence[], limitations: Limitat
     }
   }
 
+  const electronEv = evidence.find((e) => e.kind === "electron-app");
+  const runtime = electronEv ? (electronEv.payload as Record<string, unknown>) : undefined;
+
+  // IF-22, IF-23: 폼 컨트롤을 작업으로. WinForms는 컨트롤 이름이 UIA AutomationId와 같다
+  const forms: FormDoc[] = [];
+  for (const e of evidence) {
+    if (e.kind !== "form") continue;
+    const f = e.payload as unknown as FormDoc;
+    forms.push(f);
+    for (const c of f.controls) {
+      if (!c.text && c.handlers.length === 0 && !c.shortcut) continue;
+      const invoke: InvokeHint[] = [];
+      if (c.shortcut) invoke.push({ via: "shortcut", keys: c.shortcut });
+      if (c.name) invoke.push({ via: "uia", automationId: c.name, name: c.text ?? c.name, pattern: "Invoke" });
+      ops.set(`form:${f.className}:${c.name}`, {
+        title: c.text || c.name,
+        group: f.framework === "delphi-vcl" ? "Delphi 폼" : ".NET 폼",
+        invoke,
+        sources: [e.source],
+        confidence: e.confidence,
+      });
+    }
+  }
+
   // IF-20: 실행 중 UI 요소 이름이 작업 제목과 같으면 uia 힌트를 붙인다
   const liveEv = evidence.find((e) => e.kind === "ui-element");
   const live = liveEv ? (liveEv.payload as unknown as LiveUi) : undefined;
@@ -247,11 +271,14 @@ export function merge(target: Target, evidence: Evidence[], limitations: Limitat
         protocols: automation.protocols.length,
         ports: automation.ports.length,
         uiElements: live?.elements.length ?? 0,
+        forms: forms.length,
+        formControls: forms.reduce((s, f) => s + f.controls.length, 0),
       },
     },
     operations,
-    ui: { menus: buildMenuTree(menuItems), dialogs, ...(live ? { live } : {}) },
+    ui: { menus: buildMenuTree(menuItems), dialogs, forms, ...(live ? { live } : {}) },
     automation,
+    ...(runtime ? { runtime } : {}),
     capabilities,
     version,
     limitations,

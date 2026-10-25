@@ -48,6 +48,10 @@ export class Reader {
     return v;
   }
 
+  peekByte(at = this.pos): number {
+    return this.bytes[at] ?? 0;
+  }
+
   peekU16(at = this.pos): number {
     if (at + 2 > this.bytes.byteLength) throw new DecodeError(`범위 초과: ${at}`);
     return this.view.getUint16(at, true);
