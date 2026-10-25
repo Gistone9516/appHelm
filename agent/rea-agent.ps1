@@ -50,27 +50,41 @@ public static class NativeWin2 {
     function Invoke-Uia($a) {
       Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
       $AE = [System.Windows.Automation.AutomationElement]
-      $procIds = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($_.Path -ieq [string]$a.target) } | ForEach-Object { $_.Id })
+      $tgt = [string]$a.target
+      if ($tgt -match '[\\/]') { $procIds = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($_.Path -ieq $tgt) } | ForEach-Object { $_.Id }) }
+      else { $base = $tgt -replace '\.exe$', ''; $procIds = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -ieq $base } | ForEach-Object { $_.Id }) }
       if ($procIds.Count -eq 0) { return @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-uia"; message = "대상이 실행 중이 아닙니다." } } }
       $wantName = [string]$a.name; $wantId = [string]$a.automationId; $wantType = [string]$a.controlType
       $found = New-Object System.Collections.ArrayList
       foreach ($procId in $procIds) {
         $cond = New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $procId)
-        foreach ($w in $AE::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)) {
-          $all = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-          foreach ($e in $all) {
-            try {
-              $cc = $e.Current
-              $type = $cc.ControlType.ProgrammaticName -replace '^ControlType\.', ''
-              $nOk = (-not $wantName) -or ($cc.Name -and $cc.Name.ToLower().Contains($wantName.ToLower()))
-              $iOk = (-not $wantId) -or ($cc.AutomationId -eq $wantId)
-              $tOk = (-not $wantType) -or ($type -eq $wantType)
-              if ($nOk -and $iOk -and $tOk) { [void]$found.Add($e) }
-            } catch {}
-          }
+        $wins = $AE::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)
+        $all = New-Object System.Collections.ArrayList
+        foreach ($w in $wins) { foreach ($d in $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) { [void]$all.Add($d) } }
+        foreach ($e in $all) {
+          try {
+            $cc = $e.Current
+            $type = $cc.ControlType.ProgrammaticName -replace '^ControlType\.', ''
+            $nOk = (-not $wantName) -or ($cc.Name -and $cc.Name.ToLower().Contains($wantName.ToLower()))
+            $iOk = (-not $wantId) -or ($cc.AutomationId -eq $wantId)
+            $tOk = (-not $wantType) -or ($type -eq $wantType)
+            if ($nOk -and $iOk -and $tOk) { [void]$found.Add($e) }
+          } catch {}
         }
       }
       if ($found.Count -eq 0) { return @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-uia"; message = "조건에 맞는 요소를 찾지 못했습니다." } } }
+      if ($a.list) {
+        $items = New-Object System.Collections.ArrayList
+        foreach ($e in $found) {
+          if ($items.Count -ge 80) { break }
+          try {
+            $cc = $e.Current
+            $pats = @($e.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName -replace 'PatternIdentifiers\.Pattern$', '' })
+            [void]$items.Add(@{ name = [string]$cc.Name; controlType = ($cc.ControlType.ProgrammaticName -replace '^ControlType\.', ''); automationId = [string]$cc.AutomationId; patterns = $pats })
+          } catch {}
+        }
+        return @{ ok = $true; detail = @{ list = $true; count = $found.Count; elements = $items.ToArray() } }
+      }
       $nth = if ($a.PSObject.Properties.Name -contains "nth") { [int]$a.nth } else { 0 }
       if ($nth -ge $found.Count) { $nth = 0 }
       $el = $found[$nth]; $cur = $el.Current

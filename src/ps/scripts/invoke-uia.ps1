@@ -13,29 +13,46 @@ try {
   $p = [IO.File]::ReadAllText($inPath, [Text.Encoding]::UTF8) | ConvertFrom-Json
   Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
   $A = [System.Windows.Automation.AutomationElement]
-  $procIds = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($_.Path -ieq [string]$p.target) } | ForEach-Object { $_.Id })
+  $tgt = [string]$p.target
+  if ($tgt -match '[\\/]') { $procIds = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($_.Path -ieq $tgt) } | ForEach-Object { $_.Id }) }
+  else { $base = $tgt -replace '\.exe$', ''; $procIds = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -ieq $base } | ForEach-Object { $_.Id }) }
   if ($procIds.Count -eq 0) { Save @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-uia"; message = "대상이 실행 중이 아닙니다." } }; return }
 
   $wantName = [string]$p.name; $wantId = [string]$p.automationId; $wantType = [string]$p.controlType
   $matches = New-Object System.Collections.ArrayList
+  # 각 최상위 창의 Descendants를 조회(창 단위라 빠름) 후 PowerShell에서 거른다
   foreach ($procId in $procIds) {
     $cond = New-Object System.Windows.Automation.PropertyCondition($A::ProcessIdProperty, $procId)
-    foreach ($w in $A::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)) {
-      # 트리 워커가 내용 창을 못 뚫는 경우가 있어 Descendants 전체를 가져와 PowerShell에서 거른다
-      $all = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
-      foreach ($e in $all) {
-        try {
-          $c = $e.Current
-          $type = $c.ControlType.ProgrammaticName -replace '^ControlType\.', ''
-          $nameOk = (-not $wantName) -or ($c.Name -and $c.Name.ToLower().Contains($wantName.ToLower()))
-          $idOk = (-not $wantId) -or ($c.AutomationId -eq $wantId)
-          $typeOk = (-not $wantType) -or ($type -eq $wantType)
-          if ($nameOk -and $idOk -and $typeOk) { [void]$matches.Add($e) }
-        } catch {}
-      }
+    $wins = $A::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)
+    $all = New-Object System.Collections.ArrayList
+    foreach ($w in $wins) {
+      $desc = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+      foreach ($d in $desc) { [void]$all.Add($d) }
+    }
+    foreach ($e in $all) {
+      try {
+        $c = $e.Current
+        $type = $c.ControlType.ProgrammaticName -replace '^ControlType\.', ''
+        $nameOk = (-not $wantName) -or ($c.Name -and $c.Name.ToLower().Contains($wantName.ToLower()))
+        $idOk = (-not $wantId) -or ($c.AutomationId -eq $wantId)
+        $typeOk = (-not $wantType) -or ($type -eq $wantType)
+        if ($nameOk -and $idOk -and $typeOk) { [void]$matches.Add($e) }
+      } catch {}
     }
   }
   if ($matches.Count -eq 0) { Save @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-uia"; message = "조건에 맞는 요소를 찾지 못했습니다." } }; return }
+  if ($p.list) {
+    $items = New-Object System.Collections.ArrayList
+    foreach ($e in $matches) {
+      if ($items.Count -ge 80) { break }
+      try {
+        $c = $e.Current
+        $pats = @($e.GetSupportedPatterns() | ForEach-Object { $_.ProgrammaticName -replace 'PatternIdentifiers\.Pattern$', '' })
+        [void]$items.Add(@{ name = [string]$c.Name; controlType = ($c.ControlType.ProgrammaticName -replace '^ControlType\.', ''); automationId = [string]$c.AutomationId; patterns = $pats })
+      } catch {}
+    }
+    Save @{ ok = $true; detail = @{ list = $true; count = $matches.Count; elements = $items.ToArray() } }; return
+  }
   $nth = if ($p.PSObject.Properties.Name -contains "nth") { [int]$p.nth } else { 0 }
   if ($nth -ge $matches.Count) { $nth = 0 }
   $el = $matches[$nth]

@@ -55,12 +55,13 @@ invoke-window 옵션:
   --host <이름|IP>     원격 노드에서 실행
 
 invoke-uia 옵션:
-  --target <exe 경로>  대상 실행 파일
+  --target <exe 경로|이름>  대상 실행 파일 경로 또는 프로세스 이름(WINWORD.EXE)
   --name <글자>        버튼/요소 이름 (부분 일치)
   --automation-id <id> AutomationId로 지정
   --control-type <형>  예: Button
   --pattern <패턴>     Invoke(기본)|Toggle|Expand|Collapse|Select|Value
   --value <값>         pattern=Value일 때 설정 값
+  --list               실행 대신 일치 요소 목록을 보여줌 (이름 확인용)
   --host <이름|IP>     원격 노드에서 실행`;
 
 const NOTICE = "[REA Adapter] 본인이 소유하거나 분석을 허가받은 프로그램에만 사용하세요 (저작권법 제101조의4: 호환 목적의 역분석만 허용).";

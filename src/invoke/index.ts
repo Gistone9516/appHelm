@@ -45,13 +45,14 @@ export interface ShellAction {
 
 export interface UiaAction {
   kind: "uia";
-  target: string;
+  target: string; // exe 전체 경로 또는 프로세스 이름(WINWORD.EXE)
   name?: string;
   automationId?: string;
   controlType?: string;
   pattern?: "Invoke" | "Toggle" | "Expand" | "Collapse" | "Select" | "Value";
   value?: string;
   nth?: number;
+  list?: boolean; // 실행 대신 일치 요소 목록을 돌려준다 (버튼 이름 확인용)
 }
 
 export type InvokeAction = ComAction | WindowAction | HttpAction | ShellAction | UiaAction;
@@ -80,6 +81,7 @@ export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<Invo
       if (action.pattern) params.pattern = action.pattern;
       if (action.value !== undefined) params.value = action.value;
       if (action.nth !== undefined) params.nth = action.nth;
+      if (action.list) params.list = true;
       const r = await runInUserSession<{ ok: boolean }>("invoke-uia.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 25000, collector: "invoke-uia" });
       return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
     }

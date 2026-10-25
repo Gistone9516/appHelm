@@ -60,7 +60,8 @@ export function buildAction(cmd: string, rest: string[]): InvokeAction | string 
     if (pattern) action.pattern = pattern;
     if (value !== undefined) action.value = value;
     if (nth !== undefined) action.nth = Number(nth);
-    if (!name && !automationId && !controlType) return "invoke-uia에는 --name / --automation-id / --control-type 중 하나가 필요합니다.";
+    if (has(rest, "--list")) action.list = true;
+    if (!name && !automationId && !controlType && !action.list) return "invoke-uia에는 --name / --automation-id / --control-type 중 하나(또는 --list)가 필요합니다.";
     return action;
   }
   if (cmd === "invoke-http") {
