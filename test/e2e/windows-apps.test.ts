@@ -1,7 +1,7 @@
 // 실제 Windows 기본 앱으로 확인한다. REA 다운로드가 필요할 수 있어 첫 실행은 1~2분 걸린다.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -11,8 +11,8 @@ import { parsePe, readImports } from "../../src/pe/pe.ts";
 const skip = process.platform !== "win32";
 const out = mkdtempSync(join(tmpdir(), "rea-adapter-e2e-"));
 
-function mapApp(target: string, stem: string): { md: string; doc: OperationDoc } {
-  const r = spawnSync(process.execPath, ["bin/rea-adapter.mjs", "map", target, "--out", out, "--quiet"], { encoding: "utf8", timeout: 300000 });
+function mapApp(target: string, stem: string, extra: string[] = []): { md: string; doc: OperationDoc } {
+  const r = spawnSync(process.execPath, ["bin/rea-adapter.mjs", "map", target, "--out", out, "--quiet", ...extra], { encoding: "utf8", timeout: 300000 });
   assert.equal(r.status, 0, r.stderr);
   return { md: r.stdout, doc: JSON.parse(readFileSync(join(out, `${stem}.ops.json`), "utf8")) as OperationDoc };
 }
@@ -55,6 +55,29 @@ test("IF-6/F-3 교차 확인: REA가 준 메뉴 리소스 수만큼 메뉴가 �
   const run = doc.provenance.collectorsRun.find((c) => c.id === "pe-resources");
   assert.ok(run && run.evidence > 0);
   assert.ok(!doc.limitations.some((l) => l.code === "E_PARSE"), JSON.stringify(doc.limitations));
+});
+
+test("IF-18: notepad 연결 프로그램 명령줄 (.txt, /p 인쇄)", { skip }, () => {
+  const { doc } = mapApp("notepad", "notepad");
+  assert.ok(doc.automation.cli.some((c) => c.source.includes(".txt")), JSON.stringify(doc.automation.cli.map((c) => c.source)));
+  assert.ok(doc.automation.cli.some((c) => /\/p %1/i.test(c.template)));
+});
+
+const ie = "C:\\Program Files\\Internet Explorer\\iexplore.exe";
+test("IF-17: iexplore COM 서버와 기본 인터페이스", { skip: skip || !existsSync(ie) }, () => {
+  const { md, doc } = mapApp(ie, "iexplore");
+  const server = doc.automation.com.find((c) => c.progId === "InternetExplorer.Application");
+  assert.ok(server, JSON.stringify(doc.automation.com.map((c) => c.progId)));
+  const wb2 = server.interfaces.find((i) => i.name === "IWebBrowser2");
+  assert.ok(wb2?.members.some((m) => m.name === "Navigate"));
+  assert.ok(!wb2?.members.some((m) => m.name === "QueryInterface"));
+  assert.match(md, /기본 인터페이스 IWebBrowser2/);
+  assert.equal(doc.summary.howToOperate[0], "com");
+});
+
+test("IF-20/IF-14: 실행 중인 explorer의 화면 요소 (--live, 사용자 세션)", { skip }, () => {
+  const { doc } = mapApp("C:\\Windows\\explorer.exe", "explorer", ["--live"]);
+  assert.ok(doc.ui.live && doc.ui.live.elements.length > 0, JSON.stringify(doc.limitations));
 });
 
 test("IF-8: PE import 표 읽기 (notepad.exe)", { skip }, () => {

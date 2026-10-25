@@ -10,11 +10,13 @@ const ALLOWED: Record<string, string[]> = {
   pe: ["core"],
   decoders: ["core"],
   "rea-bridge": ["core"],
-  collectors: ["core", "pe", "decoders", "rea-bridge"],
+  ps: ["core"],
+  session: ["core", "ps"],
+  collectors: ["core", "pe", "decoders", "rea-bridge", "ps", "session"],
   probe: ["core", "pe"],
   merge: ["core"],
   render: ["core"],
-  cli: ["core", "pe", "decoders", "rea-bridge", "collectors", "probe", "merge", "render"],
+  cli: ["core", "pe", "decoders", "rea-bridge", "ps", "session", "collectors", "probe", "merge", "render"],
 };
 
 function walk(dir: string): string[] {

@@ -25,8 +25,8 @@ export interface PeInfo {
 
 export type EvidenceKind =
   | "menu-item" | "dialog" | "dialog-control" | "accelerator" | "string" | "version"
-  | "import-capability" | "com-method" | "cli-arg" | "shell-verb" | "url-protocol"
-  | "ui-element" | "http-endpoint" | "dotnet-member" | "js-ipc" | "form-component";
+  | "import-capability" | "com-server" | "cli-arg" | "shell-verb" | "url-protocol"
+  | "ui-element" | "listen-port" | "http-endpoint" | "dotnet-member" | "js-ipc" | "form-component";
 
 export interface Locator {
   file: string;
@@ -120,6 +120,61 @@ export interface DialogDoc {
   controls: { id: number; className: string; text: string }[];
 }
 
+export interface AutomationDoc {
+  com: ComServerDoc[];
+  cli: CliDoc[];
+  protocols: ProtocolDoc[];
+  ports: PortDoc[];
+}
+
+export interface ComServerDoc {
+  clsid: string;
+  progId?: string;
+  server: "local" | "inproc";
+  typeLib?: string;
+  interfaces: ComInterfaceDoc[];
+}
+
+export interface ComInterfaceDoc {
+  name: string;
+  kind: "dispatch" | "interface" | "coclass" | "enum" | "other";
+  doc?: string;
+  guid?: string;
+  implements?: string[];
+  members: { name: string; invokeKind: "method" | "get" | "put" | "putref"; params: string[]; doc?: string }[];
+}
+
+export interface CliDoc {
+  source: string;
+  template: string;
+  argv: string[];
+}
+
+export interface ProtocolDoc {
+  scheme: string;
+  template: string;
+}
+
+export interface PortDoc {
+  pid: number;
+  address: string;
+  port: number;
+}
+
+export interface LiveUi {
+  windows: string[];
+  elements: UiElement[];
+  truncated: boolean;
+}
+
+export interface UiElement {
+  path: string;
+  controlType: string;
+  name: string;
+  automationId?: string;
+  patterns: string[];
+}
+
 export interface OperationDoc {
   schemaVersion: 1;
   generatedAt: string;
@@ -132,7 +187,8 @@ export interface OperationDoc {
     counts: Record<string, number>;
   };
   operations: Operation[];
-  ui: { menus: MenuNode[]; dialogs: DialogDoc[] };
+  ui: { menus: MenuNode[]; dialogs: DialogDoc[]; live?: LiveUi };
+  automation: AutomationDoc;
   capabilities: string[];
   version: Record<string, string>;
   limitations: Limitation[];

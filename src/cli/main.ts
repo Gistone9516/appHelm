@@ -6,6 +6,10 @@ import { mapProgram } from "../core/pipeline.ts";
 import type { CollectorContext } from "../core/types.ts";
 import { peImports } from "../collectors/pe-imports/index.ts";
 import { peResources } from "../collectors/pe-resources/index.ts";
+import { comTypelib } from "../collectors/com-typelib/index.ts";
+import { localPorts } from "../collectors/local-ports/index.ts";
+import { registryVerbs } from "../collectors/registry-verbs/index.ts";
+import { uiaSnapshot } from "../collectors/uia-snapshot/index.ts";
 import { merge } from "../merge/index.ts";
 import { createProbe } from "../probe/index.ts";
 import { createReaRunner } from "../rea-bridge/runner.ts";
@@ -17,8 +21,8 @@ const USAGE = `사용법: rea-adapter map <exe 경로 또는 이름> [옵션]
   --out <폴더>       결과를 저장할 폴더 (기본: ./rea-adapter-out)
   --lang <언어>      리소스 언어 (기본: 시스템 언어, 예: ko-KR)
   --timeout <ms>     REA 한 번 실행의 제한 시간 (기본: 180000)
-  --live             실행 중인 프로그램에 붙는 수집 허용 (2차 사이클)
-  --allow-launch     대상 프로그램을 실행하는 수집 허용 (2차 사이클)
+  --live             실행 중인 프로그램의 화면 요소(UI Automation)를 읽음
+  --allow-launch     대상 프로그램을 실행하는 수집 허용 (아직 해당 수집 없음)
   --quiet            진행 로그를 숨김`;
 
 const NOTICE = "[REA Adapter] 본인이 소유하거나 분석을 허가받은 프로그램에만 사용하세요 (저작권법 제101조의4: 호환 목적의 역분석만 허용).";
@@ -85,7 +89,8 @@ async function main(): Promise<number> {
     rea: createReaRunner({ workDir, timeoutMs: args.timeoutMs, log }),
     log,
   };
-  const result = await mapProgram(args.target!, ctx, { probe: createProbe(args.lang), collectors: [peResources, peImports], merge });
+  const collectors = [peResources, peImports, registryVerbs, comTypelib, localPorts, uiaSnapshot];
+  const result = await mapProgram(args.target!, ctx, { probe: createProbe(args.lang), collectors, merge });
   if ("error" in result) {
     for (const l of result.error) process.stderr.write(`오류: ${l.message}${l.hint ? ` (${l.hint})` : ""}\n`);
     return 1;

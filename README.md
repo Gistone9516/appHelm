@@ -15,10 +15,12 @@ npm install
 ```
 node bin/rea-adapter.mjs map notepad
 node bin/rea-adapter.mjs map "C:\Program Files\앱\app.exe" --out 결과폴더
+node bin/rea-adapter.mjs map notepad --live
 ```
 
 - Markdown 요약(4KB 이하)이 화면에 출력되고, `rea-adapter-out\<이름>.ops.md`와 전체 내용 `<이름>.ops.json`이 저장된다.
-- REA 첫 실행은 패키지 다운로드 때문에 1분 정도 걸리고, 이후에는 대상 하나에 약 8초가 걸린다.
+- `--live`를 붙이면 실행 중인 대상 창의 화면 요소(UI Automation)도 읽는다. 대상을 먼저 실행해 두어야 한다.
+- REA 첫 실행은 패키지 다운로드 때문에 1분 정도 걸리고, 이후에는 대상 하나에 약 10초가 걸린다.
 - 본인이 소유하거나 분석을 허가받은 프로그램에만 쓴다(저작권법 제101조의4).
 
 검증 명령:
@@ -33,15 +35,23 @@ npm run e2e
 ## 구조
 
 ```
-_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-16, 실측 사실 F-1~F-8). 코드와 충돌하면 이 문서가 이긴다
+_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-21, 실측 사실 F-1~F-12). 코드와 충돌하면 이 문서가 이긴다
 bin/rea-adapter.mjs    실행 진입점 (tsx로 소스를 바로 실행)
-src/core/              공유 타입, 부작용 허용 판정(IF-2), 파이프라인
+src/core/              공유 타입, 부작용 허용 판정(IF-2), 파이프라인 (수집원 동시 실행)
 src/pe/                PE 헤더·import 표 읽기, MUI 파일 탐색
 src/decoders/          메뉴·단축키·문자열·버전·대화상자 리소스 바이트 해석
 src/rea-bridge/        REA CLI 실행(버전 6.7.0 고정)과 출력 해석
-src/collectors/        수집원. pe-resources(리소스), pe-imports(import 기반 기능 추정)
+src/ps/                PowerShell 5.1 스크립트 실행기와 스크립트(scripts/*.ps1, ASCII 전용)
+src/session/           화면이 필요한 스크립트를 사용자 세션에서 실행 (서비스 세션이면 1회용 예약 작업)
+src/collectors/        수집원
+  pe-resources/          메뉴·단축키·대화상자·문자열·버전 리소스
+  pe-imports/            import 기반 기능 추정
+  registry-verbs/        셸 동사·연결 프로그램·URL 프로토콜·App Paths
+  com-typelib/           COM 서버와 TypeLib의 메서드·속성
+  local-ports/           실행 중인 대상이 연 TCP 포트 (연결은 하지 않음)
+  uia-snapshot/          실행 중인 창의 UI Automation 요소 (--live)
 src/probe/             대상 판별 (경로나 이름 → 실행 파일, 종류, MUI)
-src/merge/             수집 결과 → 조작 문서 (같은 명령 합치기, 이름 결정)
+src/merge/             수집 결과 → 조작 문서 (같은 명령 합치기, 이름 결정, 자동화 창구 정리)
 src/render/            Markdown 요약
 src/cli/               rea-adapter map 명령
 scripts/check-boundaries.ts   폴더 간 import 규칙 검사 (IF-3)
@@ -53,14 +63,19 @@ test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 - **REA는 리소스 위치만 찾고, 해석은 어댑터가 한다 (IF-6).** REA CLI는 리소스 내용을 해석하지 않고, import 명령도 없다(F-3, F-4). 같은 일을 두 곳에서 구현하지 않으려고 PE 리소스 디렉터리는 REA만 읽는다.
 - **MUI 파일을 따라간다 (IF-7).** Windows 기본 앱의 메뉴는 `ko-KR\notepad.exe.mui` 같은 별도 파일에 있다. 이걸 안 보면 메뉴가 통째로 빠진다.
 - **같은 명령은 하나의 작업으로 합친다 (IF-10, IF-15).** 메뉴 항목과 단축키를 명령 ID로 묶는다. 단축키 표끼리 같은 키를 다른 명령에 연결하면, 소수 쪽 표를 특정 모드용으로 분류해 기본 단축키에서 뺀다. 메모장의 SLIPUPACC 표가 Ctrl+C를 "끝내기"에 연결하고 있어서 생긴 규칙이다.
+- **COM은 서버의 기본 인터페이스를 앞세운다 (IF-17).** 서버 CLSID와 같은 coclass의 기본 인터페이스에서 예시 멤버를 뽑는다. 숨김 형식도 coclass가 가리키면 남긴다. IE의 IWebBrowser2가 `hidden`이라 일괄 제외하면 핵심 인터페이스가 빠졌다(F-12).
+- **화면 수집은 사용자 세션에서 한다 (IF-14, IF-20).** 서비스 세션(Session 0)에서는 창이 보이지 않는다(F-7). 그래서 1회용 예약 작업으로 사용자 세션에서 스크립트를 돌리고, 끝나면 작업을 지운다.
+- **PowerShell과는 파일로 주고받는다 (IF-21).** 스크립트는 ASCII만 쓰고, 입출력은 UTF-8 JSON 파일이다. PowerShell 5.1이 원소 1개 배열을 값으로 풀어 버리므로(F-11), 배열은 TypeScript 경계에서 `asArray()`로 맞춘다.
 - **수집원은 실패해도 예외를 던지지 않는다 (IF-1).** 일부가 실패해도 나머지 결과로 문서를 만들고, 실패는 "한계"에 적는다.
 - **대상 프로그램을 실행하거나 붙는 수집은 플래그가 있어야 한다 (IF-2).** 판정은 `src/core/policy.ts` 한 곳에서만 한다.
 
 ## 현재 상태
 
-- 1차 사이클 완료: 네이티브 exe의 메뉴, 단축키, 대화상자, 버전, import 기반 기능을 문서로 만든다. 메모장, 레지스트리 편집기, 그림판으로 검증했다.
+- 1차 사이클 완료: 네이티브 exe의 메뉴, 단축키, 대화상자, 버전, import 기반 기능. 메모장, 레지스트리 편집기, 그림판으로 검증했다.
+- 2차 사이클 완료: 셸 동사·URL 프로토콜·명령줄, COM TypeLib, 열린 포트, 사용자 세션의 UIA. 메모장, Internet Explorer(COM), 탐색기(UIA)로 검증했다.
 - 다음 사이클:
-  - 2차: 셸 동사·URL 프로토콜, COM TypeLib, 로컬 포트, 사용자 세션의 UIA 수집
   - 3차: .NET, Delphi 폼, Electron
   - 4차: MCP 서버와 실행 계층
-- 알려진 제약: 이 도구를 서비스 세션(Session 0)에서 실행하면 화면 창이 보이지 않는다. 정적 분석은 영향이 없고, UIA 수집은 2차에서 예약 작업 방식으로 해결한다(F-7, IF-14).
+- 보류:
+  - 대상을 직접 실행하는 수집(`cli-help`, `--allow-launch`로 자동 실행 후 UIA)은 부작용이 있어 따로 결정한다.
+  - 메뉴를 펼쳐야 보이는 하위 UIA 요소는 읽지 않는다.

@@ -12,7 +12,7 @@ const ID = "pe-resources";
 const RT = { MENU: 4, DIALOG: 5, STRING: 6, ACCELERATOR: 9, VERSION: 16 } as const;
 const HANDLED = new Set<number>(Object.values(RT));
 // 커서, 비트맵, 아이콘, 매니페스트, MUI 정보, 기업 데이터 보호 표지 등 조작과 무관한 종류
-const IGNORED = new Set<number | string>([1, 2, 3, 11, 12, 14, 24, "MUI","EDPENLIGHTENEDAPPINFOID", "EDPPERMISSIVEAPPINFOID"]);
+const IGNORED = new Set<number | string>([1, 2, 3, 11, 12, 14, 24, "MUI","EDPENLIGHTENEDAPPINFOID", "EDPPERMISSIVEAPPINFOID", "WEVT_TEMPLATE"]);
 const UNHANDLED_HINTS: Record<string, string> = {
   UIFILE: "UIFILE은 리본 UI 정의입니다 (다음 사이클 대상).",
   "10": "RCDATA(10)는 Delphi 폼일 수 있습니다 (다음 사이클 대상).",

@@ -1,8 +1,23 @@
 // Evidence[] → OperationDoc. 같은 명령의 여러 출처를 하나의 작업으로 합친다 (IF-5, IF-9, IF-10).
 import { knownCommandName, titleFromString } from "./knownIds.ts";
-import type { DialogDoc, Evidence, InvokeHint, InvokeVia, Limitation, MenuNode, Operation, OperationDoc, Target } from "../core/types.ts";
+import type {
+  AutomationDoc, CliDoc, ComServerDoc, DialogDoc, Evidence, InvokeHint, InvokeVia, Limitation, LiveUi, MenuNode, Operation, OperationDoc, PortDoc, Target,
+} from "../core/types.ts";
 
 export const INVOKE_ORDER: InvokeVia[] = ["com", "cli", "wm_command", "shortcut", "menu", "uia", "http", "shell"];
+
+const UIA_ACTION_PATTERNS = ["Invoke", "Toggle", "ExpandCollapse", "SelectionItem"];
+
+/** UI 글자 비교용: 니모닉 "(&F)"·"(F)"와 탭 뒤 단축키, 끝의 "..."를 지운다. */
+export function normalizeLabel(s: string): string {
+  return s
+    .split("\t")[0]!
+    .replace(/\(&?[A-Za-z0-9]\)/g, "")
+    .replace(/&/g, "")
+    .replace(/(\.\.\.|…)$/, "")
+    .trim()
+    .toLowerCase();
+}
 
 const rank = (v: InvokeVia) => INVOKE_ORDER.indexOf(v);
 
@@ -148,7 +163,59 @@ export function merge(target: Target, evidence: Evidence[], limitations: Limitat
     ops.set(`cmd:${cmd}`, op);
   }
 
+  // IF-18: 셸 동사와 URL 프로토콜도 작업이다 (명령줄 템플릿으로 실행)
+  const automation: AutomationDoc = { com: [], cli: [], protocols: [], ports: [] };
+  // 같은 명령 템플릿은 하나로 묶는다 (메모장은 .txt·.bat·.cmd …가 같은 템플릿을 쓴다)
+  const byTemplate = new Map<string, { verbs: Set<string>; whats: string[]; argv: string[]; invoke: InvokeHint[]; source: string; confidence: number }>();
+  for (const e of evidence) {
+    if (e.kind !== "shell-verb") continue;
+    const p = e.payload as { progId: string; verb: string; template: string; extensions: string[]; argv: string[] };
+    const key = p.template.toLowerCase();
+    const g = byTemplate.get(key) ?? { verbs: new Set<string>(), whats: [], argv: p.argv, invoke: e.invoke ?? [], source: e.source, confidence: e.confidence };
+    g.verbs.add(p.verb);
+    for (const w of p.extensions.length ? p.extensions : [p.progId]) if (!g.whats.includes(w)) g.whats.push(w);
+    byTemplate.set(key, g);
+  }
+  for (const [key, g] of byTemplate) {
+    const template = evidence.find((e) => e.kind === "shell-verb" && (e.payload.template as string).toLowerCase() === key)!.payload.template as string;
+    const whats = g.whats.length > 4 ? `${g.whats.slice(0, 4).join(", ")} 외 ${g.whats.length - 4}개` : g.whats.join(", ");
+    const verbs = [...g.verbs].join("/");
+    // JSON에는 전체 목록을 남긴다. 줄임은 작업 제목과 Markdown 표시에서만 한다
+    automation.cli.push({ source: `${verbs}: ${g.whats.join(", ")}`, template, argv: g.argv });
+    ops.set(`verb:${key}`, { title: `${verbs} (${whats})`, group: "셸 동사", invoke: g.invoke, sources: [g.source], confidence: g.confidence });
+  }
+  for (const e of evidence) {
+    if (e.kind === "url-protocol") {
+      const p = e.payload as { scheme: string; template: string; argv: string[] };
+      automation.protocols.push({ scheme: p.scheme, template: p.template });
+      ops.set(`url:${p.scheme}`, { title: `${p.scheme}: URL 열기`, group: "URL 프로토콜", invoke: e.invoke ?? [], sources: [e.source], confidence: e.confidence });
+    } else if (e.kind === "cli-arg") {
+      automation.cli.push(e.payload as unknown as CliDoc);
+    } else if (e.kind === "com-server") {
+      automation.com.push(e.payload as unknown as ComServerDoc);
+    } else if (e.kind === "listen-port") {
+      automation.ports.push(e.payload as unknown as PortDoc);
+    }
+  }
+
+  // IF-20: 실행 중 UI 요소 이름이 작업 제목과 같으면 uia 힌트를 붙인다
+  const liveEv = evidence.find((e) => e.kind === "ui-element");
+  const live = liveEv ? (liveEv.payload as unknown as LiveUi) : undefined;
+  if (live) {
+    const byTitle = new Map<string, Operation>();
+    for (const o of ops.values()) if (!byTitle.has(normalizeLabel(o.title))) byTitle.set(normalizeLabel(o.title), o);
+    for (const el of live.elements) {
+      const pattern = el.patterns.find((p) => UIA_ACTION_PATTERNS.includes(p));
+      if (!pattern || !el.name) continue;
+      const op = byTitle.get(normalizeLabel(el.name));
+      if (!op) continue;
+      addHint(op, { via: "uia", name: el.name, pattern, ...(el.automationId ? { automationId: el.automationId } : {}) });
+      if (!op.sources.includes(liveEv!.source)) op.sources.push(liveEv!.source);
+    }
+  }
+
   const operations = [...ops.values()].map((o) => ({ ...o, invoke: sortInvoke(o.invoke) }));
+  const comMembers = automation.com.reduce((s, c) => s + c.interfaces.reduce((a, i) => a + i.members.length, 0), 0);
   const version = (evidence.find((e) => e.kind === "version")?.payload ?? {}) as Record<string, string>;
   const dialogs: DialogDoc[] = evidence
     .filter((e) => e.kind === "dialog")
@@ -156,6 +223,7 @@ export function merge(target: Target, evidence: Evidence[], limitations: Limitat
   const capabilities = evidence.filter((e) => e.kind === "import-capability").map((e) => e.payload.capability as string);
   const vias = new Set<InvokeVia>();
   for (const o of operations) for (const h of o.invoke) vias.add(h.via);
+  if (comMembers > 0) vias.add("com");
 
   return {
     schemaVersion: 1,
@@ -173,10 +241,17 @@ export function merge(target: Target, evidence: Evidence[], limitations: Limitat
         dialogs: dialogs.length,
         strings: strings.size,
         capabilities: capabilities.length,
+        comServers: automation.com.length,
+        comMembers,
+        cliTemplates: automation.cli.length,
+        protocols: automation.protocols.length,
+        ports: automation.ports.length,
+        uiElements: live?.elements.length ?? 0,
       },
     },
     operations,
-    ui: { menus: buildMenuTree(menuItems), dialogs },
+    ui: { menus: buildMenuTree(menuItems), dialogs, ...(live ? { live } : {}) },
+    automation,
     capabilities,
     version,
     limitations,

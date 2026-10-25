@@ -1,6 +1,6 @@
 // REA CLI를 자식 프로세스로 실행한다 (IF-11, IF-12).
 import { spawn } from "node:child_process";
-import { createWriteStream, readFileSync, statSync } from "node:fs";
+import { createWriteStream, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Limitation, ReaRunner } from "../core/types.ts";
 
@@ -78,6 +78,11 @@ export function createReaRunner(opts: RunnerOptions): ReaRunner {
               json = JSON.parse(readFileSync(outFile, "utf8").replace(/^﻿/, ""));
             } catch (e) {
               return resolve(fail("E_PARSE", `REA 출력을 JSON으로 읽지 못했습니다: ${(e as Error).message}`));
+            }
+            try {
+              rmSync(outFile, { force: true });
+            } catch {
+              // 읽기는 끝났으니 지우지 못해도 결과에는 영향이 없다
             }
             const err = reaErrorOf(json);
             if (err) return resolve(fail("E_UNSUPPORTED_FORMAT", `REA가 거부했습니다: ${err}`));
