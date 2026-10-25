@@ -4,8 +4,35 @@
 # 조작하는 쪽(.53)에서:  $env:REA_ADAPTER_TOKEN="<토큰>"; rea-adapter invoke-com ... --host <이 노드>
 param([string]$Token, [int]$Port = 47817)
 $ErrorActionPreference = "Stop"
-$AgentVersion = "2026-10-25.4-read"  # 조작하는 쪽이 /health로 버전을 확인한다
+$AgentVersion = "2026-10-25.5-com"  # 조작하는 쪽이 /health로 버전을 확인한다
 if (-not $Token) { Write-Error "토큰이 필요합니다: -Token <값>"; exit 1 }
+
+# COM은 에이전트 메인 스레드(STA)에서 직접 실행한다. 자식 런스페이스에서는 COM 지연바인딩이
+# 값을 돌려주지 못하는 문제가 있었다(측정 2026-10-25). 메인 스레드라 멈춤 위험은 있으나,
+# 보호된 보기 등은 UIA로 먼저 풀어 COM 블록을 피한다.
+function Invoke-ComMain($a) {
+  try {
+    $segments = @($a.path -split '\.')
+    if ($a.attach) { $root = [Runtime.InteropServices.Marshal]::GetActiveObject([string]$a.progId) }
+    else { $root = New-Object -ComObject ([string]$a.progId) }
+    $obj = $root
+    for ($i = 0; $i -lt $segments.Count - 1; $i++) {
+      $obj = $obj.GetType().InvokeMember($segments[$i], [Reflection.BindingFlags]::GetProperty, $null, $obj, @())
+    }
+    $last = $segments[$segments.Count - 1]
+    if ($a.PSObject.Properties.Name -contains "setValue") {
+      [void]$obj.GetType().InvokeMember($last, [Reflection.BindingFlags]::SetProperty, $null, $obj, @($a.setValue))
+      return @{ ok = $true; detail = @{ ok = $true; action = "set"; path = $a.path } }
+    }
+    $args2 = @(); if ($a.PSObject.Properties.Name -contains "args" -and $a.args) { $args2 = @($a.args) }
+    $flags = if ($args2.Count -gt 0) { [Reflection.BindingFlags]::InvokeMethod } else { [Reflection.BindingFlags]'InvokeMethod,GetProperty' }
+    $ret = $obj.GetType().InvokeMember($last, $flags, $null, $obj, $args2)
+    $retStr = if ($null -ne $ret) { [string]$ret } else { $null }
+    return @{ ok = $true; detail = @{ ok = $true; action = "invoke"; path = $a.path; result = $retStr } }
+  } catch {
+    return @{ ok = $false; limitation = @{ code = "E_PS_FAILED"; collector = "invoke-com"; message = $_.Exception.Message } }
+  }
+}
 
 # 조작 하나를 별도 STA 런스페이스에서 시간제한을 두고 실행한다.
 # 보호된 보기의 Word 등으로 COM 호출이 멈춰도 에이전트 전체가 물리지 않게 한다.
@@ -153,7 +180,8 @@ while ($listener.IsListening) {
       $body = (New-Object IO.StreamReader($req.InputStream, $req.ContentEncoding)).ReadToEnd()
       $parsed = $body | ConvertFrom-Json
       Write-Host "invoke: $($parsed.action.kind) $($parsed.action.path)$($parsed.action.commandId)"
-      $out = Invoke-WithTimeout $parsed.action 25000
+      if ([string]$parsed.action.kind -eq "com") { $out = Invoke-ComMain $parsed.action }
+      else { $out = Invoke-WithTimeout $parsed.action 25000 }
     } else {
       $resp.StatusCode = 404; $out = @{ error = "알 수 없는 경로" }
     }
