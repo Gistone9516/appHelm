@@ -2,7 +2,8 @@
 import { readFileSync } from "node:fs";
 import type { Collector, CollectorContext, Evidence, FormDoc, Limitation, Target } from "../../core/types.ts";
 import { decodeDfm } from "../../decoders/dfm.ts";
-import { parsePeResourcesJson, type ResourceEntry } from "../../rea-bridge/peResources.ts";
+import { parsePe } from "../../pe/pe.ts";
+import { readResources, type ResourceEntry } from "../../pe/resources.ts";
 
 const ID = "delphi-dfm";
 const RT_RCDATA = 10;
@@ -22,15 +23,13 @@ export const delphiDfm: Collector = {
   sideEffect: "none",
   appliesTo: (t: Target) => t.family === "delphi",
   async collect(t: Target, ctx: CollectorContext) {
-    const r = await ctx.rea.run("inspect-pe-resources", [t.path]);
-    if (!r.ok) return { evidence: [], limitations: [{ ...r.limitation, collector: ID }] };
+    const buf = new Uint8Array(readFileSync(t.path));
     let entries: ResourceEntry[];
     try {
-      entries = parsePeResourcesJson(r.json).filter((e) => e.type === RT_RCDATA);
+      entries = readResources(parsePe(buf)).filter((e) => e.type === RT_RCDATA);
     } catch (e) {
       return { evidence: [], limitations: [{ code: "E_PARSE", collector: ID, message: `리소스 목록을 읽지 못했습니다: ${(e as Error).message}` }] };
     }
-    const buf = new Uint8Array(readFileSync(t.path));
     const ansi = ansiDecoder(ctx.lang);
     const evidence: Evidence[] = [];
     const limitations: Limitation[] = [];

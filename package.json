@@ -8,6 +8,12 @@
     "apphelm": "bin/apphelm.mjs",
     "apphelm-mcp": "bin/apphelm-mcp.mjs"
   },
+  "files": [
+    "bin",
+    "src",
+    "agent",
+    "README.md"
+  ],
   "engines": {
     "node": ">=20"
   },

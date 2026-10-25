@@ -1,4 +1,4 @@
-// 실제 Windows 기본 앱으로 확인한다. REA 다운로드가 필요할 수 있어 첫 실행은 1~2분 걸린다.
+// 실제 Windows 기본 앱으로 확인한다. .NET 시험(IF-22)은 REA를 내려받으므로 첫 실행이 1~2분 걸릴 수 있다.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
@@ -50,7 +50,7 @@ test("mspaint: MFC 표준 ID 이름과 상황별 표 처리", { skip }, () => {
   assert.ok(save && save.title !== "명령 #57603", save?.title);
 });
 
-test("IF-6/F-3 교차 확인: REA가 준 메뉴 리소스 수만큼 메뉴가 해석된다", { skip }, () => {
+test("IF-6 교차 확인: 자체 리더가 찾은 메뉴 리소스가 해석된다", { skip }, () => {
   const { doc } = mapApp("notepad", "notepad");
   const run = doc.provenance.collectorsRun.find((c) => c.id === "pe-resources");
   assert.ok(run && run.evidence > 0);

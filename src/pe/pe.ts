@@ -1,4 +1,4 @@
-// IF-8: PE 헤더와 import 표만 직접 읽는다. 리소스는 REA가 맡는다 (IF-6).
+// IF-8: PE 헤더와 import 표를 직접 읽는다. 리소스 디렉터리는 resources.ts가 읽는다 (IF-6).
 import type { PeInfo } from "../core/types.ts";
 
 export class PeError extends Error {}

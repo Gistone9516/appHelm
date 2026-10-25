@@ -6,7 +6,8 @@ import { decodeDialog } from "../../decoders/dialog.ts";
 import { decodeMenu } from "../../decoders/menu.ts";
 import { decodeStringBlock } from "../../decoders/stringtable.ts";
 import { decodeVersionInfo } from "../../decoders/versioninfo.ts";
-import { parsePeResourcesJson, type ResourceEntry } from "../../rea-bridge/peResources.ts";
+import { parsePe } from "../../pe/pe.ts";
+import { readResources, type ResourceEntry } from "../../pe/resources.ts";
 
 const ID = "pe-resources";
 const RT = { MENU: 4, DIALOG: 5, STRING: 6, ACCELERATOR: 9, VERSION: 16 } as const;
@@ -111,17 +112,15 @@ export const peResources: Collector = {
     const mui = t.muiPaths[0];
     const files = mui ? [mui, t.path] : [t.path];
 
+    const cache = new Map<string, Uint8Array>();
     const picked: Picked[] = [];
     const seen = new Set<string>();
     for (const file of files) {
-      const r = await ctx.rea.run("inspect-pe-resources", [file]);
-      if (!r.ok) {
-        limitations.push({ ...r.limitation, collector: ID, message: `${file}: ${r.limitation.message}` });
-        continue;
-      }
       let entries: ResourceEntry[];
       try {
-        entries = pickByLanguage(parsePeResourcesJson(r.json), lcid);
+        const buf = new Uint8Array(readFileSync(file));
+        cache.set(file, buf);
+        entries = pickByLanguage(readResources(parsePe(buf)), lcid);
       } catch (err) {
         limitations.push({ code: "E_PARSE", collector: ID, message: `${file}: ${(err as Error).message}` });
         continue;
@@ -140,17 +139,12 @@ export const peResources: Collector = {
 
     const unhandled = new Set<string>();
     const stringCount = { n: 0 };
-    const cache = new Map<string, Uint8Array>();
     for (const e of picked) {
       if (typeof e.type !== "number" || !HANDLED.has(e.type)) {
         if (!IGNORED.has(e.type)) unhandled.add(String(e.type));
         continue;
       }
-      let buf = cache.get(e.file);
-      if (!buf) {
-        buf = new Uint8Array(readFileSync(e.file));
-        cache.set(e.file, buf);
-      }
+      const buf = cache.get(e.file)!; // 목록을 읽을 때 이미 넣어 두었다
       try {
         decodeOne(e, buf.subarray(e.offset, e.offset + e.bytes), evidence, stringCount);
       } catch (err) {

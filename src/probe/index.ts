@@ -13,9 +13,10 @@ export function resolveExecutable(input: string): string | null {
   if (isAbsolute(input) || input.includes("\\") || input.includes("/")) return null;
   const names = /\.[a-z0-9]+$/i.test(input) ? [input] : [input + ".exe", input];
   const dirs = [...(process.env.PATH ?? "").split(delimiter), process.env.SystemRoot ?? "C:\\Windows", join(process.env.SystemRoot ?? "C:\\Windows", "System32")];
-  for (const d of dirs) {
-    if (!d) continue;
-    for (const n of names) {
+  // 이름 순서가 바깥 고리다: Git Bash의 PATH 앞쪽에 있는 확장자 없는 셸 스크립트(usr\bin\notepad)보다 .exe가 먼저다
+  for (const n of names) {
+    for (const d of dirs) {
+      if (!d) continue;
       const p = join(d, n);
       try {
         if (existsSync(p) && statSync(p).isFile()) return p;
