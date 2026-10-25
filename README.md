@@ -39,6 +39,17 @@ node bin/rea-adapter.mjs map 대상.exe --host book
 node bin/rea-adapter.mjs invoke-com --progid Word.Application --attach --path "Selection.TypeText" --args "[\"안녕\"]" --host 100.67.200.125
 ```
 
+MCP 서버 (Claude Code에서 직접 호출):
+
+```
+# Claude Code에 등록 (한 번): 이 저장소 폴더에서
+claude mcp add --transport stdio rea-adapter -- node --import tsx "F:\SUAN\2026-2\REA Adapter\src\mcp\main.ts"
+# 원격 조작을 쓰면 에이전트 토큰을 환경변수로:
+#   claude mcp add --transport stdio --env REA_ADAPTER_TOKEN=<토큰> rea-adapter -- node --import tsx "<경로>\src\mcp\main.ts"
+```
+
+등록 후 Claude Code에서 `map_program`, `get_operation_doc`, `invoke_operation`, `list_hosts`를 쓸 수 있다. stdout은 JSON-RPC 전용이라 로그는 전부 stderr로 나간다.
+
 검증 명령:
 
 ```
@@ -99,9 +110,9 @@ test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 - 1차 사이클 완료: 네이티브 exe의 메뉴, 단축키, 대화상자, 버전, import 기반 기능. 메모장, 레지스트리 편집기, 그림판으로 검증했다.
 - 2차 사이클 완료: 셸 동사·URL 프로토콜·명령줄, COM TypeLib, 열린 포트, 사용자 세션의 UIA. 메모장, Internet Explorer(COM), 탐색기(UIA)로 검증했다.
 - 3차 사이클 완료: .NET WinForms 폼, Delphi DFM, Electron(package.json·fuse). 직접 빌드한 WinForms 앱, Git 설치 제거기(Delphi), Discord(Electron)로 검증했다.
-- 4차 진행 중:
-  - 완료: 실행 계층(COM·창·UIA·HTTP), Tailscale 에이전트 전송(serve/무설치 PowerShell 에이전트/--host). **원격 노드에서 실제 앱 조작을 검증**했다 — 노트북(.125)의 Word에 Tailscale로 붙어 UIA로 "편집 사용"을 누르고 COM으로 문장을 입력한 뒤 되읽어 확인(2026-10-25).
-  - 남음: MCP 서버(`map_program`·`invoke_operation`)
+- 4차 완료:
+  - 실행 계층(COM·창·UIA·HTTP), Tailscale 에이전트 전송(serve/무설치 PowerShell 에이전트/--host). **원격 노드에서 실제 앱 조작을 검증** — 노트북(.125)의 Word에 Tailscale로 붙어 UIA로 "편집 사용"을 누르고 COM으로 문장을 입력한 뒤 되읽어 확인(2026-10-25).
+  - **MCP 서버**(`src/mcp/`, 의존성 0 stdio JSON-RPC): 도구 `list_hosts`·`map_program`·`get_operation_doc`·`invoke_operation`. Claude Code가 직접 호출해 원격 PC 앱까지 조작. JSON-RPC 왕복(initialize·tools/list·tools/call) 검증 완료.
 - 원격 조작 메모: Tailscale은 연결만 준다. 조작은 대상 PC 안의 에이전트가 로컬로 실행한다. SSH·WinRM이 닫혀 있어 에이전트는 대상 PC에서 직접 실행해야 한다(무설치 `agent/rea-agent.ps1`). 에이전트는 토큰이 있어야 응답하고 loopback·Tailscale 주소에만 바인딩한다.
   - **배포 시 반드시 `_인터페이스계약.md` §5 체크리스트**를 따른다(실패 원인 F-16~F-22). 핵심: 에이전트는 대상 앱과 같은 권한(일반 권한)으로 실행(관리자면 COM 붙기 실패), 일반 권한 바인딩용 urlacl 1회 등록, COM은 에이전트 메인 스레드에서 실행, 보호된 보기는 UIA로 먼저 해제.
 - 보류:

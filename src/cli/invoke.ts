@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { invoke, type InvokeAction, type UiaAction } from "../invoke/index.ts";
-import { remoteInvoke } from "./client.ts";
+import { remoteInvoke } from "../transport/client.ts";
 
 function opt(rest: string[], name: string): string | undefined {
   const i = rest.indexOf(name);

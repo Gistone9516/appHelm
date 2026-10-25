@@ -2,8 +2,8 @@
 import { randomBytes } from "node:crypto";
 import { startAgent } from "../server/agent.ts";
 import { ownTailscaleIp } from "../transport/host.ts";
-import { ALL_COLLECTORS } from "./main.ts";
-import { DEFAULT_PORT } from "./client.ts";
+import { ALL_COLLECTORS } from "./collectors.ts";
+import { DEFAULT_PORT } from "../transport/client.ts";
 
 export async function runServe(rest: string[]): Promise<number> {
   let port = DEFAULT_PORT;

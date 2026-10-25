@@ -5,13 +5,15 @@
   "type": "module",
   "license": "MIT",
   "bin": {
-    "rea-adapter": "bin/rea-adapter.mjs"
+    "rea-adapter": "bin/rea-adapter.mjs",
+    "rea-adapter-mcp": "bin/rea-adapter-mcp.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "map": "tsx src/cli/main.ts map",
+    "mcp": "tsx src/mcp/main.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"test/unit/**/*.test.ts\"",

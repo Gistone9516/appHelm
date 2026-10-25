@@ -1,51 +1,66 @@
 # 인계 노트
 
 ## 목표
-MCP를 지원하지 않는 Windows 프로그램을 AI가 하네스로 조작할 수 있게 하는 도구 **REA Adapter**를 만든다.
-- 하는 일: 프로그램의 리소스·코드·Windows 창구를 읽어 **AI가 읽는 조작 문서**(Markdown 요약 + JSON)를 만든다.
-- 조건: 사전 작업 없이 명령 한 줄로 실행. 깊은 역공학은 하지 않는다.
-- REA(morluto/rea, MIT)는 포크하지 않고 **하위 엔진으로 불러 쓴다**. 사용자가 고른 "얇은 새 패키지" 방식이다.
-- 사용자는 코드를 거의 쓰지 않으므로 AI가 구현하고, 사용자는 `map` 명령만 실행한다.
+- MCP를 지원하지 않는 Windows 프로그램을 AI가 조작하게 하는 도구 **REA Adapter**를 만든다. 위치는 `F:\SUAN\2026-2\REA Adapter`.
+- 하는 일은 두 가지다.
+  - 대상 exe의 리소스·COM·셸 동사·UI를 읽어 **AI용 조작 문서**(`*.ops.md` 4KB 요약 + `*.ops.json`)를 만든다.
+  - 그 문서대로 **실제로 조작**한다. Tailscale로 연결된 다른 PC도 대상이다.
+- REA(`rea-agents@6.7.0`)는 포크하지 않고 하위 엔진으로 불러 쓴다. 사용자 결정이며, 가볍게 유지하고 코드 복사를 피하려는 이유다.
 
 ## 한 일
-- **0차 실측** (공유 계약 F-1~F-8에 기록)
-  - REA 6.7.0은 Node 24.22.0에서도 돈다. 첫 실행 75초, 이후 약 4초.
-  - REA CLI에는 `inspect-pe-imports`가 없다. 그래서 import는 어댑터가 직접 읽는다.
-  - TypeLib은 PowerShell 5.1에서 설치 없이 읽힌다.
-  - 이 셸은 Session 0이라 UIA 창이 0개였다. 예약 작업(`schtasks /rl LIMITED /it`)으로 띄우면 Session 1에서 창 9개가 보인다.
-- **1차 사이클 완료**, 커밋 `c2060cc` (로컬만, push 안 함)
-  - 리소스 위치는 REA `inspect-pe-resources`로 얻고, 메뉴·단축키·문자열·버전·대화상자는 직접 해석한다.
-  - MUI 파일(`ko-KR\*.mui`)을 따라간다.
-  - 메뉴와 단축키를 명령 ID로 합친다.
-  - IF-15: 특수 모드용 단축키 표를 분리한다. 메모장 SLIPUPACC가 Ctrl+C를 "끝내기"에 연결하고 있었다.
-  - IF-16: 이름 없는 명령은 MFC 표준 ID 표로 이름을 붙인다.
-- **검증**: 단위 테스트 18개, e2e 5개(메모장·레지스트리 편집기·그림판), 타입 검사, 경계 검사 모두 통과.
-- **실행**: `node bin/rea-adapter.mjs map notepad` → `rea-adapter-out\notepad.ops.md`와 `.ops.json`. 대상 하나에 약 8초.
+- **1~3차 완료.** 커밋은 `c2060cc`, `be360c3`, `3b03f10`이다.
+  - 네이티브 exe: 메뉴·단축키·대화상자·버전, import 기반 기능 추정.
+  - COM TypeLib·셸 동사·포트·UIA.
+  - .NET WinForms·Delphi DFM·Electron.
+- **4차(MCP 서버 제외) 완료.** 마지막 커밋은 `0f18c0c`이고, **push는 안 했다.**
+  - 실행 계층 `src/invoke/`: com·window·uia·http·shell.
+  - `serve`/`--host` 전송, 무설치 에이전트 `agent/rea-agent.ps1`.
+- **원격 실증(2026-10-25).** 노트북 `book-akvd4hpqjf`(100.67.200.125)의 Word에서 확인했다.
+  - UIA로 "편집 사용(E)"을 클릭했다.
+  - COM으로 `테스트 성공 안녕 준서`를 입력하고 `ActiveDocument.Content.Text`로 되읽어 확인했다.
+- **실패 원인 기록.**
+  - `_인터페이스계약.md` F-16~F-22와 §5 배포 체크리스트.
+  - 전역 `work-rules-shell` SH-35~37.
+  - 프로젝트 메모리 `remote-operation-gotchas.md`.
+- **검증 상태.** 단위 테스트 40개, e2e 10개 통과. 이후 TS 코드는 바뀌지 않았다.
 
 ## 다음 단계
-1. **2차 사이클**: 사용자에게 착수 여부를 확인하는 중이었다(마지막 질문에 아직 답 없음). 붙일 수집원은 아래와 같다.
-   - `src/collectors/registry-verbs/`: 셸 동사, URL 프로토콜, 연결 프로그램
-   - `com-typelib/`: CLSID → TypeLib 메서드. 참고: `%TEMP%\rea-c0\scripts\t2_typelib.ps1`
-   - `local-ports/`
-   - `src/session/` + `uia-snapshot/`: 예약 작업 방식이고 `--live` 옵트인. 작업은 끝나면 반드시 삭제한다(IF-14).
-   - PowerShell 실행기 `src/ps/` (UTF-8, EncodedCommand)
-2. **3차**: .NET(REA managed 명령), Delphi DFM(RCDATA), Electron(REA analyze-javascript-application), 폴더 대상
-3. **4차**: MCP 서버(`map_program`, `get_operation_doc`)와 실행 계층(WM_COMMAND, COM, 단축키). 화면 조작은 Windows-MCP와 연동한다.
-4. **사이클마다**: 공유 계약을 먼저 고치고 → 구현 → `npm run typecheck`, `check:boundaries`, `test`, `e2e` → README 갱신 → 로컬 커밋.
+1. **MCP 서버(`src/mcp/`)를 만든다.**
+   - 도구: `list_hosts`, `map_program(host,target)`, `get_operation_doc(host,section,query)`, `invoke_operation(host,action)`.
+   - stdio 방식이며 `@modelcontextprotocol/sdk` 사용을 검토한다.
+2. **에이전트의 죽은 코드를 정리한다.** `rea-agent.ps1` 런스페이스 블록 안의 `Invoke-Com`은 이제 안 쓴다. COM은 `Invoke-ComMain`이 메인 스레드에서 처리한다.
+3. **`invoke-uia` 단위·e2e 테스트를 보강한다.** .53에서는 실증하지 못했다(세션 0 브리지 한계, F-21). 실증은 노트북에서만 했다.
+4. **검증 명령.** `npm run typecheck`, `npm run check:boundaries`, `npm test`, `npm run e2e`.
+5. **원격 재현 순서.**
+   - 대상 PC에서는 **일반 권한** PowerShell로 실행한다: `powershell -ExecutionPolicy Bypass -File agent\rea-agent.ps1 -Token <토큰>`
+   - 조작하는 쪽에서는 `$env:REA_ADAPTER_TOKEN="<토큰>"`를 설정한 뒤 실행한다: `node bin/rea-adapter.mjs invoke-com --progid Word.Application --attach --path ActiveDocument.Name --host 100.67.200.125`
 
 ## 미결 결정
-- 2차 착수 승인. 에이전트를 쓸 경우 대수를 먼저 보고한다. 지금까지 4대를 썼다.
-- git 작성자(gistone9516 / ckfflem@gmail.com)를 전역 규칙에도 넣을지. 지금은 이 저장소와 프로젝트 메모리에만 있다.
-- `.git` 소유자가 SYSTEM이라 git 명령마다 `-c safe.directory=*`를 붙이고 있다. 전역 설정으로 바꿀지.
-- 이름 "REA" 사용 여부. 상표 등록 여부는 확인하지 못했다. 개인용이면 문제없다.
-- 법적 범위는 "본인 소유이거나 허가받은 프로그램"으로 고지만 한다(저작권법 제101조의4). 근거는 검색 발췌라 약하다.
+- **대상을 실행하는 수집**(`--allow-launch`, `cli-help`)은 사용자 화면에 창이 떠서 보류했다. 넣을지 정해야 한다.
+- **push 여부.**
+  - 프로젝트 저장소.
+  - `~/.claude` 저장소: `skills/work-rules-shell/SKILL.md`와 `manifest.json`이 수정됐지만 커밋하지 않았다. 공개 저장소다.
+- **시험 토큰 `rea9f3c71e2b8`은 폐기하거나 교체해야 한다.** 노트북에는 urlacl(127.0.0.1와 100.67.200.125의 47817 포트)이 등록된 채로 남아 있다.
+- **세션 시작 때 보고한 설정 불일치가 아직 그대로다.**
+  - hook 예시 파일 불일치.
+  - `skills\synced` 미등록.
+  - CLAUDE.md 용량 초과.
+  - discordAgents·learningHarness 경로.
+- **알려진 한계.**
+  - .NET 폼 글자 추정은 신뢰도 0.5다.
+  - WPF는 해석하지 않는다.
+  - Node v24.22.0은 REA 요구 버전보다 낮지만 동작한다(F-1).
 
 ## 건드린 파일
-- `F:\SUAN\2026-2\REA Adapter\`
-  - `_인터페이스계약.md` (SoT. 규칙 IF-1~IF-16, 실측 F-1~F-8. 코드와 충돌하면 이 문서가 이긴다)
-  - `README.md`, `package.json`, `tsconfig.json`, `.gitignore`, `bin/rea-adapter.mjs`
-  - `src/{core,pe,decoders,rea-bridge,collectors/pe-resources,collectors/pe-imports,probe,merge,render,cli}/`
-  - `scripts/check-boundaries.ts`, `test/unit/*`, `test/e2e/windows-apps.test.ts`
-- 계획: `C:\Users\ckffl\.claude\plans\structured-dazzling-shannon.md`
-- 메모리: `C:\Users\ckffl\.claude\projects\F--SUAN-2026-2-REA-Adapter\memory\git-identity.md`, `MEMORY.md`
-- 임시 파일 (지워도 됨): `%TEMP%\rea-brief\rea` (REA 소스 사본, 실행한 적 없음), `%TEMP%\rea-c0\` (점검 스크립트와 출력)
+- 계약·문서: `_인터페이스계약.md`(IF-1~24, F-1~22, §5), `README.md`.
+- 코어: `src/core/{types,policy,pipeline}.ts`, `src/pe/{pe,mui}.ts`, `src/probe/index.ts`, `src/merge/{index,knownIds}.ts`, `src/render/markdown.ts`.
+- 해석기: `src/decoders/{reader,menu,accelerator,stringtable,versioninfo,dialog,dfm,asar}.ts`.
+- 수집원: `src/collectors/{pe-resources,pe-imports,registry-verbs,com-typelib,local-ports,uia-snapshot,dotnet,delphi-dfm,electron-js}/index.ts`.
+- 실행·전송: `src/invoke/index.ts`, `src/server/agent.ts`, `src/transport/host.ts`, `src/cli/{main,invoke,serve,client}.ts`, `src/rea-bridge/{runner,peResources}.ts`, `src/ps/runner.ts`, `src/session/index.ts`.
+- PowerShell: `src/ps/scripts/{com,verbs,ports,uia,invoke-com,invoke-window,invoke-uia}.ps1`, `agent/rea-agent.ps1`(버전 `2026-10-25.5-com`).
+- 테스트·도구: `test/unit/*.test.ts`, `test/e2e/windows-apps.test.ts`, `test/fixtures/dotnet-winforms/SampleApp.cs`, `scripts/{check-boundaries.ts,build-fixtures.ps1}`.
+- 전역: `~/.claude/skills/work-rules-shell/SKILL.md`, `~/.claude/manifest.json`, 프로젝트 메모리 `memory/{git-identity,remote-operation-gotchas}.md`. git 전역 작성자는 gistone9516 / ckfflem@gmail.com이다.
+- 임시 폴더.
+  - `%TEMP%\rea-c0`: 시험 스크립트.
+  - `%TEMP%\rea-brief\rea`: REA 클론. 신뢰하지 않는 파일이라 실행하지 않았다.
+  - `%TEMP%\rea-adapter`: 옛 작업 폴더 72개. 권한이 막혀 지우지 못했다.

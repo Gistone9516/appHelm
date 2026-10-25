@@ -4,23 +4,15 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { mapProgram } from "../core/pipeline.ts";
 import type { CollectorContext } from "../core/types.ts";
-import { peImports } from "../collectors/pe-imports/index.ts";
-import { peResources } from "../collectors/pe-resources/index.ts";
-import { comTypelib } from "../collectors/com-typelib/index.ts";
-import { delphiDfm } from "../collectors/delphi-dfm/index.ts";
-import { dotnet } from "../collectors/dotnet/index.ts";
-import { electronJs } from "../collectors/electron-js/index.ts";
-import { localPorts } from "../collectors/local-ports/index.ts";
-import { registryVerbs } from "../collectors/registry-verbs/index.ts";
-import { uiaSnapshot } from "../collectors/uia-snapshot/index.ts";
 import type { OperationDoc } from "../core/types.ts";
 import { merge } from "../merge/index.ts";
 import { createProbe } from "../probe/index.ts";
 import { createReaRunner } from "../rea-bridge/runner.ts";
 import { renderMarkdown } from "../render/markdown.ts";
+import { ALL_COLLECTORS } from "./collectors.ts";
 import { runInvoke } from "./invoke.ts";
 import { runServe } from "./serve.ts";
-import { remoteMap } from "./client.ts";
+import { remoteMap } from "../transport/client.ts";
 
 const USAGE = `사용법: rea-adapter <명령> ...
 
@@ -148,8 +140,6 @@ export async function runMap(rest: string[]): Promise<number> {
   writeDoc(result, args.out, log);
   return 0;
 }
-
-export const ALL_COLLECTORS = [peResources, peImports, registryVerbs, comTypelib, localPorts, dotnet, delphiDfm, electronJs, uiaSnapshot];
 
 function writeDoc(result: OperationDoc, out: string, log: (m: string) => void): void {
   const outDir = resolve(out);
