@@ -4,7 +4,7 @@
 # 조작하는 쪽(.53)에서:  $env:REA_ADAPTER_TOKEN="<토큰>"; rea-adapter invoke-com ... --host <이 노드>
 param([string]$Token, [int]$Port = 47817)
 $ErrorActionPreference = "Stop"
-$AgentVersion = "2026-10-25.3-uia"  # 조작하는 쪽이 /health로 버전을 확인한다
+$AgentVersion = "2026-10-25.4-read"  # 조작하는 쪽이 /health로 버전을 확인한다
 if (-not $Token) { Write-Error "토큰이 필요합니다: -Token <값>"; exit 1 }
 
 # 조작 하나를 별도 STA 런스페이스에서 시간제한을 두고 실행한다.
@@ -36,7 +36,9 @@ public static class NativeWin2 {
         return @{ ok = $true; detail = @{ ok = $true; action = "set"; path = $a.path } }
       }
       $args2 = @(); if ($a.PSObject.Properties.Name -contains "args" -and $a.args) { $args2 = @($a.args) }
-      $ret = $obj.GetType().InvokeMember($last, [Reflection.BindingFlags]::InvokeMethod, $null, $obj, $args2)
+      # 인자가 없으면 메서드/속성 모두 허용(GetProperty 겸용) → Version·Name 같은 속성도 값을 돌려받는다
+      $flags = if ($args2.Count -gt 0) { [Reflection.BindingFlags]::InvokeMethod } else { [Reflection.BindingFlags]'InvokeMethod,GetProperty' }
+      $ret = $obj.GetType().InvokeMember($last, $flags, $null, $obj, $args2)
       $retStr = if ($null -ne $ret) { [string]$ret } else { $null }
       return @{ ok = $true; detail = @{ ok = $true; action = "invoke"; path = $a.path; result = $retStr } }
     }

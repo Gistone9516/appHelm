@@ -17,12 +17,16 @@ export function buildAction(cmd: string, rest: string[]): InvokeAction | string 
     const path = opt(rest, "--path");
     if (!progId || !path) return "invoke-com에는 --progid와 --path가 필요합니다.";
     const action: InvokeAction = { kind: "com", progId, path, attach: has(rest, "--attach") };
+    // --text는 문자열 인자 하나를 그대로 넘긴다(JSON 따옴표가 셸에서 지워지는 문제 회피, SH-14)
+    const text = opt(rest, "--text");
     const argsRaw = opt(rest, "--args");
-    if (argsRaw) {
+    if (text !== undefined) {
+      action.args = [text];
+    } else if (argsRaw) {
       try {
         action.args = JSON.parse(argsRaw) as unknown[];
       } catch {
-        return "--args는 JSON 배열이어야 합니다.";
+        return "--args는 JSON 배열이어야 합니다. (문자열 하나면 --text를 쓰세요)";
       }
     }
     const setRaw = opt(rest, "--set");

@@ -15,7 +15,7 @@ function post<T>(ip: string, path: string, body: unknown, timeoutMs: number): Pr
   return new Promise((resolve) => {
     const payload = JSON.stringify(body);
     const req = request(
-      { host: ip, port: DEFAULT_PORT, path, method: "POST", timeout: timeoutMs, headers: { "content-type": "application/json", "content-length": Buffer.byteLength(payload), "x-rea-token": token() } },
+      { host: ip, port: DEFAULT_PORT, path, method: "POST", timeout: timeoutMs, headers: { "content-type": "application/json; charset=utf-8", "content-length": Buffer.byteLength(payload), "x-rea-token": token() } },
       (res) => {
         let b = "";
         res.on("data", (d) => (b += d));

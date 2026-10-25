@@ -35,7 +35,8 @@ try {
     [void]$obj.GetType().InvokeMember($last, [Reflection.BindingFlags]::SetProperty, $null, $obj, @($p.setValue))
     Save @{ ok = $true; action = "set"; path = $p.path }
   } else {
-    $ret = $obj.GetType().InvokeMember($last, [Reflection.BindingFlags]::InvokeMethod, $null, $obj, $args2)
+    $flags = if ($args2.Count -gt 0) { [Reflection.BindingFlags]::InvokeMethod } else { [Reflection.BindingFlags]'InvokeMethod,GetProperty' }
+    $ret = $obj.GetType().InvokeMember($last, $flags, $null, $obj, $args2)
     $retStr = if ($null -ne $ret) { [string]$ret } else { $null }
     Save @{ ok = $true; action = "invoke"; path = $p.path; result = $retStr }
   }

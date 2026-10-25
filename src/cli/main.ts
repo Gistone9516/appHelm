@@ -44,7 +44,8 @@ invoke-com 옵션:
   --progid <ProgID>  예: Word.Application
   --attach           이미 떠 있는 인스턴스에 붙는다
   --path <경로>      예: Selection.TypeText (속성 경로 + 끝 메서드/속성)
-  --args <JSON배열>  메서드 인자
+  --text <문자열>    문자열 인자 하나 (TypeText 등, 따옴표 걱정 없음)
+  --args <JSON배열>  메서드 인자 여러 개
   --set <JSON값>     속성 설정 값
   --host <이름|IP>   원격 노드에서 실행
 
