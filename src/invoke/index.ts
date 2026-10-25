@@ -43,7 +43,18 @@ export interface ShellAction {
   argv: string[];
 }
 
-export type InvokeAction = ComAction | WindowAction | HttpAction | ShellAction;
+export interface UiaAction {
+  kind: "uia";
+  target: string;
+  name?: string;
+  automationId?: string;
+  controlType?: string;
+  pattern?: "Invoke" | "Toggle" | "Expand" | "Collapse" | "Select" | "Value";
+  value?: string;
+  nth?: number;
+}
+
+export type InvokeAction = ComAction | WindowAction | HttpAction | ShellAction | UiaAction;
 
 export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<InvokeResult> {
   switch (action.kind) {
@@ -58,6 +69,18 @@ export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<Invo
       // 창 조작은 대상과 같은 세션에서 돌아야 한다 (IF-14, F-7)
       const params = { target: action.target, mode: action.mode, commandId: action.commandId, keys: action.keys };
       const r = await runInUserSession<{ ok: boolean }>("invoke-window.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 20000, collector: "invoke-window" });
+      return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
+    }
+    case "uia": {
+      // 화면 요소 조작도 대상과 같은 세션에서 돌아야 한다 (IF-14)
+      const params: Record<string, unknown> = { target: action.target };
+      if (action.name) params.name = action.name;
+      if (action.automationId) params.automationId = action.automationId;
+      if (action.controlType) params.controlType = action.controlType;
+      if (action.pattern) params.pattern = action.pattern;
+      if (action.value !== undefined) params.value = action.value;
+      if (action.nth !== undefined) params.nth = action.nth;
+      const r = await runInUserSession<{ ok: boolean }>("invoke-uia.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 25000, collector: "invoke-uia" });
       return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
     }
     case "http":

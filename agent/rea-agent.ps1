@@ -47,10 +47,50 @@ public static class NativeWin2 {
       elseif ($a.mode -eq "keys") { [void][NativeWin2]::SetForegroundWindow($h); Start-Sleep -Milliseconds 150; Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait([string]$a.keys); return @{ ok = $true; detail = @{ ok = $true; mode = "keys"; keys = [string]$a.keys } } }
       return @{ ok = $false; limitation = @{ code = "E_PARSE"; collector = "invoke-window"; message = "알 수 없는 mode" } }
     }
+    function Invoke-Uia($a) {
+      Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+      $AE = [System.Windows.Automation.AutomationElement]
+      $procIds = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($_.Path -ieq [string]$a.target) } | ForEach-Object { $_.Id })
+      if ($procIds.Count -eq 0) { return @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-uia"; message = "대상이 실행 중이 아닙니다." } } }
+      $wantName = [string]$a.name; $wantId = [string]$a.automationId; $wantType = [string]$a.controlType
+      $found = New-Object System.Collections.ArrayList
+      foreach ($procId in $procIds) {
+        $cond = New-Object System.Windows.Automation.PropertyCondition($AE::ProcessIdProperty, $procId)
+        foreach ($w in $AE::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)) {
+          $all = $w.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+          foreach ($e in $all) {
+            try {
+              $cc = $e.Current
+              $type = $cc.ControlType.ProgrammaticName -replace '^ControlType\.', ''
+              $nOk = (-not $wantName) -or ($cc.Name -and $cc.Name.ToLower().Contains($wantName.ToLower()))
+              $iOk = (-not $wantId) -or ($cc.AutomationId -eq $wantId)
+              $tOk = (-not $wantType) -or ($type -eq $wantType)
+              if ($nOk -and $iOk -and $tOk) { [void]$found.Add($e) }
+            } catch {}
+          }
+        }
+      }
+      if ($found.Count -eq 0) { return @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-uia"; message = "조건에 맞는 요소를 찾지 못했습니다." } } }
+      $nth = if ($a.PSObject.Properties.Name -contains "nth") { [int]$a.nth } else { 0 }
+      if ($nth -ge $found.Count) { $nth = 0 }
+      $el = $found[$nth]; $cur = $el.Current
+      $pattern = if ($a.pattern) { [string]$a.pattern } else { "Invoke" }
+      switch ($pattern) {
+        "Invoke" { ($el.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)).Invoke() }
+        "Toggle" { ($el.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)).Toggle() }
+        "Expand" { ($el.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)).Expand() }
+        "Collapse" { ($el.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)).Collapse() }
+        "Select" { ($el.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)).Select() }
+        "Value" { ($el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)).SetValue([string]$a.value) }
+        default { throw "알 수 없는 pattern: $pattern" }
+      }
+      return @{ ok = $true; detail = @{ pattern = $pattern; name = [string]$cur.Name; automationId = [string]$cur.AutomationId; matchCount = $found.Count } }
+    }
     switch ([string]$action.kind) {
       "com" { Invoke-Com $action }
       "window" { Invoke-Window $action }
-      default { @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "agent"; message = "com/window만 지원합니다." } } }
+      "uia" { Invoke-Uia $action }
+      default { @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "agent"; message = "com/window/uia만 지원합니다." } } }
     }
   }).AddArgument($action)
   $async = $ps.BeginInvoke()

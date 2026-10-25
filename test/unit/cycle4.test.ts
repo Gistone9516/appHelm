@@ -39,6 +39,19 @@ test("invoke-window 액션 구성 (wm, keys)", () => {
   assert.deepEqual(buildAction("invoke-window", ["--target", "C:\\x.exe", "--keys", "^s"]), { kind: "window", target: "C:\\x.exe", mode: "keys", keys: "^s" });
 });
 
+test("invoke-uia 액션 구성 (이름+패턴)", () => {
+  assert.deepEqual(buildAction("invoke-uia", ["--target", "C:\\x.exe", "--name", "편집 사용", "--pattern", "Invoke"]), {
+    kind: "uia",
+    target: "C:\\x.exe",
+    name: "편집 사용",
+    pattern: "Invoke",
+  });
+});
+
+test("invoke-uia 선택자 누락", () => {
+  assert.equal(typeof buildAction("invoke-uia", ["--target", "C:\\x.exe"]), "string");
+});
+
 test("invoke-http 액션 구성", () => {
   assert.deepEqual(buildAction("invoke-http", ["--url", "http://127.0.0.1:6463/rpc", "--method", "POST", "--body", "{}"]), {
     kind: "http",

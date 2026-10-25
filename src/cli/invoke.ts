@@ -2,7 +2,7 @@
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { invoke, type InvokeAction } from "../invoke/index.ts";
+import { invoke, type InvokeAction, type UiaAction } from "../invoke/index.ts";
 import { remoteInvoke } from "./client.ts";
 
 function opt(rest: string[], name: string): string | undefined {
@@ -43,6 +43,25 @@ export function buildAction(cmd: string, rest: string[]): InvokeAction | string 
     if (wm) return { kind: "window", target, mode: "wm_command", commandId: Number(wm) };
     if (keys) return { kind: "window", target, mode: "keys", keys };
     return "invoke-window에는 --wm <명령ID> 또는 --keys <키>가 필요합니다.";
+  }
+  if (cmd === "invoke-uia") {
+    const target = opt(rest, "--target");
+    if (!target) return "invoke-uia에는 --target이 필요합니다.";
+    const action: InvokeAction = { kind: "uia", target };
+    const name = opt(rest, "--name");
+    const automationId = opt(rest, "--automation-id");
+    const controlType = opt(rest, "--control-type");
+    const pattern = opt(rest, "--pattern") as UiaAction["pattern"] | undefined;
+    const value = opt(rest, "--value");
+    const nth = opt(rest, "--nth");
+    if (name) action.name = name;
+    if (automationId) action.automationId = automationId;
+    if (controlType) action.controlType = controlType;
+    if (pattern) action.pattern = pattern;
+    if (value !== undefined) action.value = value;
+    if (nth !== undefined) action.nth = Number(nth);
+    if (!name && !automationId && !controlType) return "invoke-uia에는 --name / --automation-id / --control-type 중 하나가 필요합니다.";
+    return action;
   }
   if (cmd === "invoke-http") {
     const url = opt(rest, "--url");

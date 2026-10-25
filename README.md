@@ -29,6 +29,7 @@ node bin/rea-adapter.mjs map notepad --live
 # 실제 조작 (바로 실행됨)
 node bin/rea-adapter.mjs invoke-com --progid Word.Application --attach --path "Selection.TypeText" --args "[\"안녕\"]"
 node bin/rea-adapter.mjs invoke-window --target "C:\Windows\System32\notepad.exe" --wm 26
+node bin/rea-adapter.mjs invoke-uia --target "C:\...\WINWORD.EXE" --name "편집 사용" --pattern Invoke
 
 # 원격: 대상 PC에서 에이전트를 띄우고(아래), 조작하는 쪽에서 --host 로 지정
 #  - 대상이 Node가 있으면:   node bin/rea-adapter.mjs serve
@@ -53,7 +54,7 @@ npm run e2e
 _인터페이스계약.md     공유 계약 (규칙 IF-1~IF-24, 실측 사실 F-1~F-15). 코드와 충돌하면 이 문서가 이긴다
 bin/rea-adapter.mjs    실행 진입점 (tsx로 소스를 바로 실행)
 agent/rea-agent.ps1    무설치 원격 에이전트 (Windows 기본 PowerShell/.NET만, 대상 PC에서 직접 실행)
-src/invoke/            실행 계층: com·window·http·shell
+src/invoke/            실행 계층: com·window·uia(화면 요소 클릭/토글/값)·http·shell
 src/server/            에이전트 HTTP 핸들러 (map·invoke)
 src/transport/         Tailscale 노드 이름/IP 해석
 src/cli/               map·invoke-*·serve 명령과 원격 클라이언트
