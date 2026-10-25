@@ -14,6 +14,7 @@ import { invoke, type InvokeAction } from "../invoke/index.ts";
 import { remoteInvoke, remoteMap } from "../transport/client.ts";
 import { tailnetNodes } from "../transport/host.ts";
 import { runNativeTrace } from "../trace/index.ts";
+import { dumpTypelib, listTypelibs, loadTypelib, searchTypelib } from "../typelib/index.ts";
 import { NO_REPLY, serveStdio } from "./jsonrpc.ts";
 
 const PROTOCOL = "2024-11-05";
@@ -128,7 +129,11 @@ async function toolInvoke(args: Record<string, unknown>): Promise<ReturnType<typ
   if (host) {
     const r = await remoteInvoke(host, action as unknown as InvokeAction);
     if (!r.ok) return errText(`원격 invoke 실패 (${host}): ${r.error}`);
-    return r.result.ok ? text(JSON.stringify(r.result.detail, null, 2)) : errText(`${r.result.limitation.code}: ${r.result.limitation.message}${r.result.limitation.hint ? ` (${r.result.limitation.hint})` : ""}`);
+    if (r.result.ok) return text(JSON.stringify(r.result.detail, null, 2));
+    // 에이전트는 실패해도 앞 단계 결과(detail)를 함께 보낸다 (IF-27)
+    const partial = (r.result as { detail?: unknown }).detail;
+    return errText(`${r.result.limitation.code}: ${r.result.limitation.message}${r.result.limitation.hint ? ` (${r.result.limitation.hint})` : ""}${partial ? `
+${JSON.stringify(partial, null, 2)}` : ""}`);
   }
   mkdirSync(WORK_DIR, { recursive: true });
   const res = await invoke(action as unknown as InvokeAction, { workDir: WORK_DIR, timeoutMs: 60000 });
@@ -142,6 +147,24 @@ async function toolTraceNative(args: Record<string, unknown>): Promise<ReturnTyp
   const r = await runNativeTrace(target, { query, log });
   if (!r.ok) return errText(`${r.limitation.code}: ${r.limitation.message}${r.limitation.hint ? ` (${r.limitation.hint})` : ""}`);
   return text(JSON.stringify(r.trace, null, 2).slice(0, 60000));
+}
+
+async function toolComReference(args: Record<string, unknown>): Promise<ReturnType<typeof text>> {
+  const libName = args.lib ? String(args.lib) : "";
+  const file = args.file ? String(args.file) : "";
+  const query = String(args.query ?? "").trim();
+  let lib = libName ? loadTypelib(libName) : null;
+  if (!lib && file) {
+    mkdirSync(WORK_DIR, { recursive: true });
+    const d = await dumpTypelib(file, { workDir: WORK_DIR, timeoutMs: 600000 });
+    if (!d.ok) return errText(`타입 라이브러리 덤프 실패: ${d.limitation.message}`);
+    lib = d.dump;
+  }
+  if (!lib) return errText(`라이브러리를 찾지 못했습니다. 저장된 것: ${listTypelibs().join(", ") || "(없음)"}. file 인자로 .olb/.tlb/.dll 경로를 주면 덤프합니다.`);
+  if (!query) return text(`${lib.name}: 형식 ${lib.types.length}개, 멤버 ${lib.memberCount}개. query에 형식 이름(Document), "형식.멤버"(Document.SaveAs2), 또는 부분 문자열(wdFormat)을 주세요.`);
+  const r = searchTypelib(lib, query, Number(args.limit ?? 150));
+  return text(`${r.lines.join("\n")}
+(${r.lines.length}/${r.total}줄${r.total > r.lines.length ? ", limit를 올리거나 더 좁게 찾으세요" : ""})`);
 }
 
 function toolListHosts(): ReturnType<typeof text> {
@@ -192,12 +215,25 @@ const TOOLS = [
         host: { type: "string", description: "원격 노드 (생략=로컬)" },
         action: {
           type: "object",
-          description: "com: {kind,progId,path,attach?,args?,setValue?} / window: {kind,target,mode:wm_command|keys,commandId?,keys?} / uia: {kind,target,name?,automationId?,controlType?,pattern?,value?,list?} / http: {kind,url,method?,body?}",
+          description: "com: {kind,progId,attach?,steps:[{path,args?,setValue?,save?,each?:{props,max?}}]} 또는 단계 하나 {kind,progId,path,args?,setValue?}. 경로 문법: 'ActiveDocument.Paragraphs(3).Range' (괄호=인자/번호), '$이름.멤버'(save로 저장한 객체), 상수는 숫자로(com_reference로 값 확인). 단계는 한 번 연결해 차례로 실행되고 첫 실패에서 멈춥니다 / window: {kind,target,mode:wm_command|keys,commandId?,keys?} / uia: {kind,target,name?,automationId?,controlType?,pattern?,value?,list?} / http: {kind,url,method?,body?}",
           properties: { kind: { type: "string", enum: ["com", "window", "uia", "http"] } },
           required: ["kind"],
         },
       },
       required: ["action"],
+    },
+  },
+  {
+    name: "com_reference",
+    description: "COM 타입 라이브러리(예: Word)에서 형식·메서드 서명·매개변수 타입·기본값·열거형 상수 값을 찾습니다. query: 형식 이름(Document → 멤버 전부), '형식.멤버'(Range.InsertAfter), 부분 문자열(wdStyle). invoke_operation으로 COM을 부르기 전에 서명과 상수 값을 여기서 확인하세요.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lib: { type: "string", description: "저장된 라이브러리 이름 (예: Word)" },
+        query: { type: "string" },
+        file: { type: "string", description: "선택: 아직 없으면 이 .olb/.tlb/.dll을 덤프" },
+        limit: { type: "number" },
+      },
     },
   },
   {
@@ -238,6 +274,7 @@ export function startMcpServer(): void {
           case "list_hosts": return toolListHosts();
           case "map_program": return await toolMapProgram(a);
           case "get_operation_doc": return toolGetDoc(a);
+          case "com_reference": return await toolComReference(a);
           case "invoke_operation": return await toolInvoke(a);
           case "trace_native": return await toolTraceNative(a);
           default: return errText(`알 수 없는 도구: ${name}`);

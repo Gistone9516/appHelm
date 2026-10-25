@@ -1,79 +1,61 @@
 # 인계 노트
 
 ## 목표
-- **AppHelm**(구 REA Adapter): MCP를 지원하지 않는 Windows 프로그램을 LLM이 조작하게 하는 도구.
-  - 저장소: github.com/Gistone9516/appHelm (`main`)
-  - 로컬: `F:\SUAN\2026-2\REA Adapter`. git, 메모리 키, MCP 경로가 깨지지 않게 폴더 이름은 그대로 뒀다.
-- 하는 일은 두 가지다.
-  - exe의 리소스, COM, 셸 동사, UI, 폼을 읽어 AI용 조작 문서를 만든다(`*.ops.md` 4KB 요약 + `*.ops.json`).
-  - 그 문서대로 COM·창·UIA·HTTP로 실제 조작한다. Tailscale로 연결된 PC도 대상이다.
-- REA(`rea-agents@6.7.0`)는 포크하지 않고 하위 엔진으로만 호출한다. 가볍게 유지하고 코드 복사를 피하려는 사용자 결정이다.
+- AppHelm을 원격 기능 없이도 다른 Windows PC에 금방 설치해 바로 쓸 수 있게 만들기.
+  - 사용자 결정: "원격 말고는 다른 컴퓨터에서 금방 설치 가능해야 해. 원격은 내 세팅일 뿐" (2026-10-25)
+- 백로그 6건 중 1번 "로컬 의존성 없애기"에 해당. 2번 "실행 경량화"도 일부 겹침.
 
 ## 한 일
-- **1~5차와 MCP 서버 완료, push까지 끝.** GitHub이 만든 초기 커밋은 force push로 덮었다.
-  - 커밋: 1차 `c2060cc`, 2차 `be360c3`, 3차 `3b03f10`, MCP `93524bd`, 5차 `18607dd`, 리네임 `9552a58`
-- **원격 실증(2026-10-25).** 노트북 `book-akvd4hpqjf`(100.67.200.125)의 Word에서 확인했다.
-  - UIA로 "편집 사용(E)"을 클릭했다.
-  - COM으로 `테스트 성공 안녕 준서`를 입력하고 `ActiveDocument.Content.Text`로 되읽었다.
-- **MCP 서버(`src/mcp/`).** 의존성 없는 stdio JSON-RPC로 직접 구현했다.
-  - 도구: `list_hosts`, `map_program`, `get_operation_doc`, `invoke_operation`, `trace_native`
-  - Claude Code에 `apphelm`으로 등록돼 있다(Connected).
-  - `shell` 조작은 임의 명령 실행 위험 때문에 노출하지 않았다.
-- **5차 Ghidra 추적.** Ghidra 12.1.4와 Temurin JDK 21을 `C:\tools`에 설치했다(sha256 대조 완료).
-  - REA가 검증한 조합이라 최신 12.2(JDK 25 필요) 대신 골랐다.
-  - 메모장 결과: 함수 794개, 문자열 557개, 콜드 스타트 약 180초, `--query entry` 매치 2건.
-- **실패 원인 기록.**
-  - `_인터페이스계약.md` F-16~F-23과 §5 배포 체크리스트
-  - 전역 `work-rules-shell` SH-35~37
-  - 메모리 `remote-operation-gotchas.md`
-- **검증.** 단위 테스트 46개, e2e 10개 통과.
+- **일반 exe 분석에서 REA 의존 제거.** PE 리소스 디렉터리(형식→이름→언어 3단계)를 직접 읽는 `src/pe/resources.ts`를 새로 만듦.
+  - 바꾸기 전에 REA `inspect-pe-resources`와 8개 파일에서 비교함. 대상은 notepad·regedit(exe+.mui), mspaint, explorer, shell32, SampleApp.
+  - 위치·크기·순서까지 완전히 같았음. explorer는 683건, 그중 이름 항목 427건 포함.
+  - 확인 후 REA 경로 `src/rea-bridge/peResources.ts`는 삭제함. 같은 일을 두 곳에서 하지 않기 위해서임.
+- **REA는 .NET 폼, Electron fuse, Ghidra 추적에만 남음.** 이 대상들은 첫 실행에 REA를 내려받아 1분쯤 걸림.
+- **버그 수정.** Git Bash에서 `apphelm map notepad`가 `C:\Program Files\Git\usr\bin\notepad`(셸 스크립트)를 골라 실패하던 문제.
+  - `src/probe/index.ts`의 탐색 순서를 바꿔 이름 후보(.exe 먼저)를 바깥 고리로 둠. 계약서 IF-25로 기록.
+- **패키징.** `package.json`에 `files` 필드 추가(bin, src, agent, README.md).
+  - README의 설치와 MCP 등록 안내에서 절대경로를 없앰.
+- **검증 결과**
+  - 단위 51, e2e 10 통과. typecheck와 check:boundaries도 통과.
+  - npx가 없는 PATH에서 notepad 지도 생성 4.6초(메뉴 5, 작업 38).
+  - `npm pack`으로 만든 패키지(66KB)를 임시 prefix에 설치하는 데 4초. 설치본에서 `apphelm map`과 `apphelm-mcp` 응답(initialize, tools/list) 정상.
+- **커밋.** 로컬 커밋 `bf88287` "리소스 읽기에서 REA 의존 제거, npm 한 줄 설치 정리". **아직 push 안 함.**
 
 ## 다음 단계
-- **사용자 백로그는 아직 착수하지 않았다**(메모리 `next-steps.md`). 1번과 6번은 뜻이 불분명하니 먼저 사용자에게 물어본다.
-  1. 로컬 의존성 없애기
-  2. 실행 경량화
-  3. 응용 계층을 빠짐없이 조사하도록 프롬프트 튜닝
-  4. skill화
-  5. Git 저장소 꾸미기(`readme-writing` 스킬)
-  6. "Laya 레이어" 적용 방안
-- **정리할 것.**
-  - `HANDOFF.md`의 다음 단계가 옛 내용이라 현재 상태로 고친다.
-  - `agent/apphelm-agent.ps1` 런스페이스 블록의 `Invoke-Com`은 죽은 코드다. COM은 이제 `Invoke-ComMain`이 처리한다.
-  - `invoke-uia`는 .53에서 실증하지 못했고 노트북에서만 확인했다(F-21).
-- **검증 명령.** `npm run typecheck`, `npm run check:boundaries`, `npm test`, `npm run e2e`
-- **로컬 실행.**
-  - 조작 문서: `node bin/apphelm.mjs map notepad`
-  - Ghidra 추적: `node bin/apphelm.mjs trace "<exe>" --query <함수>`
-- **원격 실행.**
-  - 대상 PC에서 **일반 권한** PowerShell로 실행한다: `powershell -ExecutionPolicy Bypass -File agent\apphelm-agent.ps1 -Token <토큰>`
-  - 조작하는 쪽에서 실행한다: `$env:APPHELM_TOKEN="<토큰>"; node bin/apphelm.mjs invoke-com --progid Word.Application --attach --path ActiveDocument.Name --host 100.67.200.125`
+1. 사용자 승인을 받고 push. 이 PC는 자격 증명 문제로 사용자가 직접 실행해야 함.
+   - `git -c safe.directory=* -C "F:\SUAN\2026-2\REA Adapter" push origin main`
+2. push 후 실제 설치 확인: `npm install -g github:Gistone9516/appHelm`, 이어서 `apphelm map notepad`.
+3. MCP 등록을 새 방식으로 바꿀지 결정. 지금 이 PC는 옛 방식(절대경로 + 옛 토큰)으로 등록돼 있음.
+   - 새 방식: `claude mcp remove apphelm` 후 `claude mcp add apphelm -- cmd /c apphelm-mcp`
+   - 원격을 쓰면 `-e APPHELM_TOKEN=<토큰>`을 이름 뒤, `--` 앞에 넣음.
+4. 남은 백로그(`memory/next-steps.md`):
+   - 2번 실행 경량화: .NET·Electron 대상의 REA 첫 다운로드를 줄이는 것이 남음.
+   - 3번 프롬프트 튜닝, 4번 skill화, 5번 Git 꾸미기(readme-writing 스킬 사용).
+   - 6번 "Laya 레이어"는 뜻부터 사용자에게 물어볼 것.
 
 ## 미결 결정
-- **대상을 실행하는 수집**(`--allow-launch`, cli-help)은 사용자 화면에 창이 떠서 보류했다.
-- **`~/.claude` 변경이 커밋되지 않았다.** SH-35~37과 `manifest.json`이다. 공개 저장소라 따로 판단해야 한다.
-- **토큰 정리.**
-  - MCP 등록 env에 옛 시험 토큰이 아직 들어 있다.
-  - 노트북에 47817 포트 urlacl이 등록된 채로 남아 있다.
-- **세션 시작 때 보고한 설정 불일치가 그대로다.** hook 예시 파일, `skills\synced` 미등록, CLAUDE.md, 외부 앱 경로.
-- **알려진 한계.**
-  - PowerShell 에이전트에는 `/map`이 없다. 원격 map은 Node `serve` 에이전트에서만 된다.
-  - .NET 폼 글자 추정의 신뢰도는 0.5이고, WPF는 해석하지 않는다.
-  - Windows용 Ghidra는 실험 단계이고 네이티브 PE만 다룬다.
+- push 여부. 외부 공개라서 승인이 필요함.
+- 이 PC의 MCP 등록을 설치본(`cmd /c apphelm-mcp`)으로 바꿀지, 개발 폴더를 직접 가리키게 둘지.
+- .NET·Electron 분석도 REA 없이 할지. .NET 메타데이터 리더는 작업량이 커서 보류 중임.
+- Node 버전: `engines`는 `>=20`. REA 없는 경로는 Node 20에서 실측하지 않았음. 이 PC는 24.22.0.
 
 ## 건드린 파일
-- 문서: `_인터페이스계약.md`(IF-1~25, F-1~24, §4·§5), `README.md`, `HANDOFF.md`
-- 코어·수집: `src/{core,pe,probe,merge,render,decoders}/`, `src/collectors/*/index.ts`(9개), `src/cli/collectors.ts`
-- 실행·전송·MCP:
-  - `src/invoke/`, `src/server/agent.ts`, `src/transport/{host,client}.ts`(client는 cli에서 옮겼다)
-  - `src/mcp/{jsonrpc,server,main}.ts`, `src/trace/index.ts`
-  - `src/pe/{pe,resources,mui}.ts`, `src/rea-bridge/{runner,ghidra}.ts`, `src/ps/`, `src/session/`
-- 진입점: `bin/apphelm.mjs`, `bin/apphelm-mcp.mjs`, `agent/apphelm-agent.ps1`(버전 `2026-10-25.5-com`)
-- 테스트: `test/unit/*.test.ts`, `test/e2e/windows-apps.test.ts`
-- 외부:
-  - `~/.claude/skills/work-rules-shell/SKILL.md`, `~/.claude/manifest.json`, `~/.claude.json`(MCP 등록)
-  - 메모리 3건: `git-identity.md`, `remote-operation-gotchas.md`, `next-steps.md`
-  - `C:\tools\ghidra_12.1.4_PUBLIC`, `C:\tools\jdk-21`
-- 임시 폴더:
-  - `%TEMP%\rea-c0`: 시험 스크립트
-  - `%TEMP%\rea-brief\rea`: REA 클론. 신뢰하지 않는 파일이라 실행하지 않았다.
-  - `%TEMP%\rea-dl`: 다운로드 파일
+- 새로 만듦
+  - `src/pe/resources.ts`
+  - `test/unit/pe-resources.test.ts`
+  - `test/unit/probe.test.ts`
+- 삭제: `src/rea-bridge/peResources.ts`
+- 수정
+  - `src/collectors/pe-resources/index.ts`, `src/collectors/delphi-dfm/index.ts`
+  - `src/pe/pe.ts` (머리 주석만)
+  - `src/probe/index.ts`
+  - `test/e2e/windows-apps.test.ts` (주석·제목)
+  - `package.json`
+  - `README.md`, `HANDOFF.md`
+  - `_인터페이스계약.md`: IF-6·IF-8·IF-12 개정, IF-25와 F-24 추가, §4 폴더 지도
+- 메모리: `C:\Users\ckffl\.claude\projects\F--SUAN-2026-2-REA-Adapter\memory\next-steps.md` (1번 완료 표시)
+- 이번 작업과 무관한 미해결 사항: 세션 시작 점검에서 `~/.claude` 설정 불일치 4건이 보고됨. 사용자에게 알렸고 아직 처리하지 않음.
+  - 훅 불일치
+  - `skills\synced` 미등록
+  - CLAUDE.md 크기 초과
+  - 외부 앱 경로 2개

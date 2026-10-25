@@ -4,7 +4,7 @@ import { request } from "node:http";
 import { request as requestHttps } from "node:https";
 import { spawn } from "node:child_process";
 import type { Limitation } from "../core/types.ts";
-import { runPsScript } from "../ps/runner.ts";
+import { asArray, runPsScript } from "../ps/runner.ts";
 import { runInUserSession } from "../session/index.ts";
 
 export type InvokeResult = { ok: true; detail: Record<string, unknown> } | { ok: false; limitation: Limitation };
@@ -14,13 +14,40 @@ export interface InvokeCtx {
   timeoutMs: number;
 }
 
+/** IF-26~28: 경로 문법은 `Paragraphs(3).Range`, `$저장이름.멤버`. each가 있으면 컬렉션을 돌며 props를 읽는다. */
+export interface ComStep {
+  path: string;
+  args?: unknown[];
+  setValue?: unknown;
+  save?: string;
+  each?: { props: string[]; max?: number };
+}
+
 export interface ComAction {
   kind: "com";
   progId: string;
-  path: string;
+  /** 단계 하나짜리 요청 (steps가 없을 때) */
+  path?: string;
   attach?: boolean;
   args?: unknown[];
   setValue?: unknown;
+  steps?: ComStep[];
+  continueOnError?: boolean;
+}
+
+export interface ComStepResult {
+  i: number;
+  path: string;
+  ok: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+/** 단계 결과 중 첫 실패를 사람이 읽는 한 줄로 (IF-27). */
+export function comFailureMessage(steps: ComStepResult[]): string {
+  const bad = steps.find((s) => !s.ok);
+  const done = steps.filter((s) => s.ok).length;
+  return bad ? `단계 ${bad.i} (${bad.path}) 실패: ${bad.error} — 앞 단계 ${done}개 성공` : "실패";
 }
 
 export interface WindowAction {
@@ -60,11 +87,20 @@ export type InvokeAction = ComAction | WindowAction | HttpAction | ShellAction |
 export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<InvokeResult> {
   switch (action.kind) {
     case "com": {
-      const params: Record<string, unknown> = { progId: action.progId, path: action.path, attach: !!action.attach };
-      if (action.args) params.args = action.args;
-      if (action.setValue !== undefined) params.setValue = action.setValue;
-      const r = await runPsScript<{ ok: boolean; action: string; result?: string }>("invoke-com.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs, collector: "invoke-com" });
-      return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
+      const params: Record<string, unknown> = { progId: action.progId, attach: !!action.attach };
+      if (action.steps?.length) params.steps = action.steps;
+      else {
+        if (!action.path) return { ok: false, limitation: { code: "E_PARSE", collector: "invoke-com", message: "path 또는 steps가 필요합니다." } };
+        params.path = action.path;
+        if (action.args) params.args = action.args;
+        if (action.setValue !== undefined) params.setValue = action.setValue;
+      }
+      if (action.continueOnError) params.continueOnError = true;
+      const r = await runPsScript<{ ok: boolean; steps: ComStepResult[] }>("invoke-com.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs, collector: "invoke-com" });
+      if (!r.ok) return { ok: false, limitation: r.limitation };
+      const steps = asArray(r.data.steps);
+      if (r.data.ok) return { ok: true, detail: { ok: true, steps } };
+      return { ok: false, limitation: { code: "E_PS_FAILED", collector: "invoke-com", message: comFailureMessage(steps) } };
     }
     case "window": {
       // 창 조작은 대상과 같은 세션에서 돌아야 한다 (IF-14, F-7)

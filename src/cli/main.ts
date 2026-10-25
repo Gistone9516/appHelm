@@ -11,6 +11,7 @@ import { createReaRunner } from "../rea-bridge/runner.ts";
 import { renderMarkdown } from "../render/markdown.ts";
 import { ALL_COLLECTORS } from "./collectors.ts";
 import { runInvoke } from "./invoke.ts";
+import { runLs, runPull, runRef, runTypelib } from "./libs.ts";
 import { runServe } from "./serve.ts";
 import { runNativeTrace } from "../trace/index.ts";
 import { remoteMap } from "../transport/client.ts";
@@ -23,6 +24,10 @@ const USAGE = `사용법: apphelm <명령> ...
   invoke-window              실행 중인 창에 명령/키를 보낸다
   invoke-http                발견한 로컬 포트로 요청을 보낸다
   serve                      이 PC를 에이전트로 띄운다 (원격 조작용)
+  ls --host H --path 폴더    원격 노드의 프로그램 폴더 목록 (읽기 전용)
+  pull --host H --path 파일  원격 노드의 프로그램 파일을 받는다 (--path 여러 번, --out 폴더)
+  typelib <파일>             타입 라이브러리 전체를 덤프한다 (.olb/.tlb/.dll/.exe)
+  ref <라이브러리> <찾을 말>  덤프한 라이브러리에서 형식·멤버·상수를 찾는다
 
 map 옵션:
   --out <폴더>       결과를 저장할 폴더 (기본: ./apphelm-out)
@@ -40,6 +45,7 @@ invoke-com 옵션:
   --text <문자열>    문자열 인자 하나 (TypeText 등, 따옴표 걱정 없음)
   --args <JSON배열>  메서드 인자 여러 개
   --set <JSON값>     속성 설정 값
+  --steps <JSON파일> 여러 단계를 한 번에 (경로 문법: Paragraphs(3).Range, $저장이름.멤버)
   --host <이름|IP>   원격 노드에서 실행
 
 invoke-window 옵션:
@@ -189,6 +195,14 @@ async function main(): Promise<number> {
       return runTrace(rest);
     case "serve":
       return runServe(rest);
+    case "ls":
+      return runLs(rest);
+    case "pull":
+      return runPull(rest);
+    case "typelib":
+      return runTypelib(rest);
+    case "ref":
+      return runRef(rest);
     default:
       process.stderr.write(USAGE + "\n");
       return cmd ? 2 : 0;

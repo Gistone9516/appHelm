@@ -1,5 +1,8 @@
 // 원격 에이전트 호출 클라이언트. (cli/에서 transport/로 이동: cli는 아무도 import할 수 없는 최상위 계층)
+import { createHash } from "node:crypto";
+import { createWriteStream, mkdirSync } from "node:fs";
 import { request } from "node:http";
+import { dirname } from "node:path";
 import type { InvokeAction, InvokeResult } from "../invoke/index.ts";
 import type { Limitation, OperationDoc } from "../core/types.ts";
 import { resolveHost } from "./host.ts";
@@ -20,9 +23,11 @@ function send<T>(method: "GET" | "POST", ip: string, port: number, path: string,
       headers["content-length"] = Buffer.byteLength(payload);
     }
     const req = request({ host: ip, port, path, method, timeout: timeoutMs, headers }, (res) => {
-      let b = "";
-      res.on("data", (d) => (b += d));
+      // 조각마다 문자열로 바꾸면 조각 경계에 걸친 한글이 깨진다: 바이트를 모아 한 번에 해석한다
+      const chunks: Buffer[] = [];
+      res.on("data", (d: Buffer) => chunks.push(d));
       res.on("end", () => {
+        const b = Buffer.concat(chunks).toString("utf8");
         if (res.statusCode !== 200) return resolve({ ok: false, error: `HTTP ${res.statusCode}: ${b.slice(0, 200)}` });
         try {
           resolve({ ok: true, data: JSON.parse(b) as T });
@@ -65,4 +70,56 @@ export async function remoteInvoke(host: string, action: InvokeAction): Promise<
   if (!token()) return { ok: false, error: "APPHELM_TOKEN 환경 변수가 필요합니다 (에이전트와 같은 토큰)." };
   const res = await send<InvokeResult>("POST", r.ip, DEFAULT_PORT, "/invoke", { action }, 90000);
   return res.ok ? { ok: true, result: res.data } : res;
+}
+
+export interface RemoteListing {
+  ok: true;
+  path: string;
+  items: { name: string; dir: boolean; size?: number }[];
+}
+
+/** IF-30: 원격 노드의 프로그램 폴더 목록 (읽기 전용). */
+export async function remoteList(host: string, path: string): Promise<{ ok: true; data: RemoteListing } | { ok: false; error: string }> {
+  const r = resolveHost(host);
+  if ("error" in r) return { ok: false, error: r.error };
+  if (!token()) return { ok: false, error: "APPHELM_TOKEN 환경 변수가 필요합니다 (에이전트와 같은 토큰)." };
+  return send<RemoteListing>("GET", r.ip, DEFAULT_PORT, `/list?path=${encodeURIComponent(path)}`, undefined, 30000);
+}
+
+/** IF-30: 원격 노드의 프로그램 파일을 받아 dest에 쓴다. 크기와 SHA-256을 확인한다. */
+export async function remoteFile(host: string, path: string, dest: string): Promise<{ ok: true; bytes: number; sha256: string } | { ok: false; error: string }> {
+  const r = resolveHost(host);
+  if ("error" in r) return { ok: false, error: r.error };
+  if (!token()) return { ok: false, error: "APPHELM_TOKEN 환경 변수가 필요합니다 (에이전트와 같은 토큰)." };
+  mkdirSync(dirname(dest), { recursive: true });
+  return new Promise((resolve) => {
+    const req = request({ host: r.ip, port: DEFAULT_PORT, path: `/file?path=${encodeURIComponent(path)}`, method: "GET", timeout: 600000, headers: { "x-rea-token": token() } }, (res) => {
+      if (res.statusCode !== 200) {
+        const chunks: Buffer[] = [];
+        res.on("data", (d: Buffer) => chunks.push(d));
+        res.on("end", () => resolve({ ok: false, error: `HTTP ${res.statusCode}: ${Buffer.concat(chunks).toString("utf8").slice(0, 300)}` }));
+        return;
+      }
+      const want = Number(res.headers["content-length"] ?? -1);
+      const wantSha = String(res.headers["x-sha256"] ?? "");
+      const hash = createHash("sha256");
+      let bytes = 0;
+      const out = createWriteStream(dest);
+      res.on("data", (d: Buffer) => {
+        hash.update(d);
+        bytes += d.length;
+      });
+      res.pipe(out);
+      out.on("finish", () => {
+        const sha = hash.digest("hex");
+        if (want >= 0 && bytes !== want) return resolve({ ok: false, error: `크기가 다릅니다: ${bytes} / ${want}` });
+        if (wantSha && sha !== wantSha) return resolve({ ok: false, error: "SHA-256이 다릅니다 (전송 중 손상)" });
+        resolve({ ok: true, bytes, sha256: sha });
+      });
+      out.on("error", (e) => resolve({ ok: false, error: e.message }));
+    });
+    req.on("error", (e) => resolve({ ok: false, error: `${e.message} (에이전트가 그 노드에서 실행 중인지, 토큰이 맞는지 확인하세요)` }));
+    req.on("timeout", () => req.destroy(new Error("시간 초과")));
+    req.end();
+  });
 }

@@ -1,8 +1,8 @@
 // invoke-com / invoke-window / invoke-http : 조작을 실제로 실행한다.
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { invoke, type InvokeAction, type UiaAction } from "../invoke/index.ts";
+import { invoke, type ComStep, type InvokeAction, type UiaAction } from "../invoke/index.ts";
 import { remoteInvoke } from "../transport/client.ts";
 
 function opt(rest: string[], name: string): string | undefined {
@@ -15,8 +15,19 @@ export function buildAction(cmd: string, rest: string[]): InvokeAction | string 
   if (cmd === "invoke-com") {
     const progId = opt(rest, "--progid");
     const path = opt(rest, "--path");
-    if (!progId || !path) return "invoke-com에는 --progid와 --path가 필요합니다.";
-    const action: InvokeAction = { kind: "com", progId, path, attach: has(rest, "--attach") };
+    const stepsFile = opt(rest, "--steps");
+    if (!progId || (!path && !stepsFile)) return "invoke-com에는 --progid와 --path(또는 --steps <JSON 파일>)가 필요합니다.";
+    if (stepsFile) {
+      // 단계 묶음은 파일로 받는다: 셸 인자로 JSON을 넘기면 따옴표가 지워진다 (SH-14)
+      try {
+        const steps = JSON.parse(readFileSync(stepsFile, "utf8").replace(/^\uFEFF/, "")) as ComStep[];
+        if (!Array.isArray(steps)) return "--steps 파일은 단계 배열(JSON)이어야 합니다.";
+        return { kind: "com", progId, steps, attach: has(rest, "--attach"), ...(has(rest, "--continue") ? { continueOnError: true } : {}) };
+      } catch (e) {
+        return `--steps 파일을 읽지 못했습니다: ${(e as Error).message}`;
+      }
+    }
+    const action: InvokeAction = { kind: "com", progId, path: path!, attach: has(rest, "--attach") };
     // --text는 문자열 인자 하나를 그대로 넘긴다(JSON 따옴표가 셸에서 지워지는 문제 회피, SH-14)
     const text = opt(rest, "--text");
     const argsRaw = opt(rest, "--args");

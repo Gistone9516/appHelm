@@ -4,34 +4,249 @@
 # 조작하는 쪽(.53)에서:  $env:APPHELM_TOKEN="<토큰>"; apphelm invoke-com ... --host <이 노드>
 param([string]$Token, [int]$Port = 47817)
 $ErrorActionPreference = "Stop"
-$AgentVersion = "2026-10-25.5-com"  # 조작하는 쪽이 /health로 버전을 확인한다
+$AgentVersion = "2026-10-25.6-steps"  # 조작하는 쪽이 /health로 버전을 확인한다
 if (-not $Token) { Write-Error "토큰이 필요합니다: -Token <값>"; exit 1 }
 
 # COM은 에이전트 메인 스레드(STA)에서 직접 실행한다. 자식 런스페이스에서는 COM 지연바인딩이
-# 값을 돌려주지 못하는 문제가 있었다(측정 2026-10-25). 메인 스레드라 멈춤 위험은 있으나,
+# 값을 돌려주지 못하는 문제가 있었다(측정 2026-10-25, F-17). 메인 스레드라 멈춤 위험은 있으나,
 # 보호된 보기 등은 UIA로 먼저 풀어 COM 블록을 피한다.
+# >>> com-core (generated from src/ps/com-core.ps1 by scripts/build-ps.ts; do not edit here)
+# AppHelm COM core (IF-26..IF-28). ASCII only (IF-21).
+# Source of truth (IF-29): scripts/build-ps.ts copies this file between the com-core markers
+# of agent/apphelm-agent.ps1 and src/ps/scripts/invoke-com.ps1. Edit here, then run: npm run build:ps
+Add-Type -AssemblyName Microsoft.VisualBasic
+
+function ComCore-ErrText($e) {
+  $x = $e
+  if ($x -is [System.Management.Automation.ErrorRecord]) { $x = $x.Exception }
+  while ($x.InnerException) { $x = $x.InnerException }
+  return [string]$x.Message
+}
+
+# "3, 'a,b', true" -> @(3, 'a,b', $true)
+function ComCore-ParseArgs([string]$s) {
+  $out = New-Object System.Collections.ArrayList
+  if ($s.Trim().Length -eq 0) { return ,@() }
+  $parts = New-Object System.Collections.ArrayList
+  $cur = New-Object System.Text.StringBuilder
+  $q = [char]0
+  foreach ($ch in $s.ToCharArray()) {
+    if ($q -ne [char]0) {
+      [void]$cur.Append($ch)
+      if ($ch -eq $q) { $q = [char]0 }
+    } elseif ($ch -eq '"' -or $ch -eq "'") {
+      $q = $ch; [void]$cur.Append($ch)
+    } elseif ($ch -eq ',') {
+      [void]$parts.Add($cur.ToString()); [void]$cur.Clear()
+    } else { [void]$cur.Append($ch) }
+  }
+  [void]$parts.Add($cur.ToString())
+  foreach ($raw in $parts) {
+    $t = $raw.Trim()
+    if ($t -match '^-?[0-9]+$') { [void]$out.Add([int]$t) }
+    elseif ($t -match '^-?[0-9]+[.][0-9]+$') { [void]$out.Add([double]$t) }
+    elseif ($t.Length -ge 2 -and (($t[0] -eq '"' -and $t[-1] -eq '"') -or ($t[0] -eq "'" -and $t[-1] -eq "'"))) { [void]$out.Add($t.Substring(1, $t.Length - 2)) }
+    elseif ($t -ieq 'true') { [void]$out.Add($true) }
+    elseif ($t -ieq 'false') { [void]$out.Add($false) }
+    elseif ($t -ieq 'missing') { [void]$out.Add([Type]::Missing) }
+    else { [void]$out.Add($t) }
+  }
+  return ,$out.ToArray()
+}
+
+# "Paragraphs(3).Range.Style" -> segments @{name; args}
+function ComCore-SplitPath([string]$p) {
+  $segs = New-Object System.Collections.ArrayList
+  $cur = New-Object System.Text.StringBuilder
+  $depth = 0; $q = [char]0
+  foreach ($ch in $p.ToCharArray()) {
+    if ($q -ne [char]0) { [void]$cur.Append($ch); if ($ch -eq $q) { $q = [char]0 }; continue }
+    if ($ch -eq '"' -or $ch -eq "'") { $q = $ch; [void]$cur.Append($ch); continue }
+    if ($ch -eq '(') { $depth++ }
+    if ($ch -eq ')') { $depth-- }
+    if ($ch -eq '.' -and $depth -eq 0) { [void]$segs.Add($cur.ToString()); [void]$cur.Clear(); continue }
+    [void]$cur.Append($ch)
+  }
+  [void]$segs.Add($cur.ToString())
+  $res = New-Object System.Collections.ArrayList
+  foreach ($sg in $segs) {
+    $t = $sg.Trim()
+    if ($t.Length -eq 0) { throw "empty path segment in '$p'" }
+    $open = $t.IndexOf('(')
+    if ($open -gt 0 -and $t.EndsWith(')')) {
+      [void]$res.Add(@{ name = $t.Substring(0, $open); args = (ComCore-ParseArgs $t.Substring($open + 1, $t.Length - $open - 2)); hasArgs = $true })
+    } else {
+      [void]$res.Add(@{ name = $t; args = @(); hasArgs = $false })
+    }
+  }
+  return ,$res.ToArray()
+}
+
+function ComCore-NormArg($v) {
+  if ($v -is [decimal]) { return [double]$v }
+  if ($v -is [long] -and $v -le [int]::MaxValue -and $v -ge [int]::MinValue) { return [int]$v }
+  return $v
+}
+
+# get / call a member; Name(args) falls back to Name.Item(args) (IF-26)
+function ComCore-Get($obj, [string]$name, [object[]]$argv) {
+  $t = $obj.GetType()
+  $both = [Reflection.BindingFlags]'InvokeMethod,GetProperty'
+  try {
+    $r = $t.InvokeMember($name, $both, $null, $obj, $argv)
+    return ,$r
+  } catch {
+    $first = $_
+    if ($argv.Count -eq 0) { throw (ComCore-ErrText $first) }
+    try {
+      $coll = $t.InvokeMember($name, [Reflection.BindingFlags]::GetProperty, $null, $obj, @())
+      $r = $coll.GetType().InvokeMember("Item", $both, $null, $coll, $argv)
+      return ,$r
+    } catch { throw (ComCore-ErrText $first) }
+  }
+}
+
+function ComCore-Set($obj, [string]$name, [object[]]$argv, $value) {
+  $all = @($argv) + @(ComCore-NormArg $value)
+  [void]$obj.GetType().InvokeMember($name, [Reflection.BindingFlags]::SetProperty, $null, $obj, $all)
+}
+
+function ComCore-Out($v, [int]$depth = 0) {
+  if ($null -eq $v) { return $null }
+  if ($v -is [string] -or $v -is [bool] -or $v -is [char]) { return $v }
+  if ($v -is [int] -or $v -is [long] -or $v -is [int16] -or $v -is [byte] -or $v -is [double] -or $v -is [single] -or $v -is [decimal] -or $v -is [uint32] -or $v -is [uint16]) { return $v }
+  if ($v -is [datetime]) { return $v.ToString("o") }
+  if ($v -is [System.__ComObject]) {
+    $tn = "object"
+    try { $tn = [Microsoft.VisualBasic.Information]::TypeName($v) } catch {}
+    return @{ object = $tn }
+  }
+  if ($v -is [array]) {
+    if ($depth -gt 0) { return "[array]" }
+    $list = New-Object System.Collections.ArrayList
+    foreach ($x in $v) { if ($list.Count -ge 200) { break }; [void]$list.Add((ComCore-Out $x 1)) }
+    return ,$list.ToArray()
+  }
+  return [string]$v
+}
+
+# walk segments from $start (exclusive of the last $skipLast segments)
+function ComCore-Walk($obj, $segs, [int]$from, [int]$to) {
+  $o = $obj
+  for ($i = $from; $i -lt $to; $i++) {
+    if ($null -eq $o) { throw "null before '$($segs[$i].name)'" }
+    $o = ComCore-Get $o $segs[$i].name $segs[$i].args
+  }
+  return ,$o
+}
+
+function ComCore-Has($o, [string]$n) { return ($null -ne $o) -and ($o.PSObject.Properties.Name -contains $n) }
+
+# a: {progId, attach, steps?: [{path, args?, setValue?, save?, each?}], path?, args?, setValue?, continueOnError?}
+function ComCore-Run($a) {
+  $steps = @()
+  if ((ComCore-Has $a "steps") -and $a.steps) { $steps = @($a.steps) }
+  else {
+    $one = @{ path = [string]$a.path }
+    if ((ComCore-Has $a "args") -and $a.args) { $one.args = @($a.args) }
+    if (ComCore-Has $a "setValue") { $one.setValue = $a.setValue }
+    $steps = @([pscustomobject]$one)
+  }
+  if ($a.attach) { $root = [Runtime.InteropServices.Marshal]::GetActiveObject([string]$a.progId) }
+  else { $root = New-Object -ComObject ([string]$a.progId) }
+  $handles = @{}
+  $results = New-Object System.Collections.ArrayList
+  $allOk = $true
+  for ($si = 0; $si -lt $steps.Count; $si++) {
+    $st = $steps[$si]
+    $path = [string]$st.path
+    try {
+      $segs = ComCore-SplitPath $path
+      $start = 0; $base = $root
+      if ($segs[0].name.StartsWith('$')) {
+        $hn = $segs[0].name.Substring(1)
+        if (-not $handles.ContainsKey($hn)) { throw "unknown handle '$hn'" }
+        $base = $handles[$hn]; $start = 1
+      }
+      $n = $segs.Count
+      if (ComCore-Has $st "each") {
+        $coll = ComCore-Walk $base $segs $start $n
+        $max = 200
+        if ((ComCore-Has $st.each "max") -and $st.each.max) { $max = [Math]::Min([int]$st.each.max, 20000) }
+        $props = @($st.each.props)
+        $rows = New-Object System.Collections.ArrayList
+        $count = 0; $truncated = $false
+        foreach ($item in $coll) {
+          if ($rows.Count -ge $max) {
+            $truncated = $true
+            try { $count = [int]$coll.Count } catch { $count = -1 }
+            break
+          }
+          $count++
+          $row = [ordered]@{}
+          foreach ($pp in $props) {
+            try { $ps2 = ComCore-SplitPath ([string]$pp); $row[[string]$pp] = ComCore-Out (ComCore-Walk $item $ps2 0 $ps2.Count) }
+            catch { $row[[string]$pp] = "!" + (ComCore-ErrText $_) }
+          }
+          [void]$rows.Add($row)
+        }
+        [void]$results.Add(@{ i = $si; path = $path; ok = $true; result = @{ count = $count; truncated = $truncated; rows = $rows.ToArray() } })
+        continue
+      }
+      if ($n - $start -lt 1) {
+        $final = $base
+      } else {
+        $parent = ComCore-Walk $base $segs $start ($n - 1)
+        $last = $segs[$n - 1]
+        if (ComCore-Has $st "setValue") {
+          ComCore-Set $parent $last.name $last.args $st.setValue
+          [void]$results.Add(@{ i = $si; path = $path; ok = $true; result = "set" })
+          continue
+        }
+        $argv = @($last.args)
+        if ((ComCore-Has $st "args") -and $st.args) { foreach ($x in @($st.args)) { $argv += ,(ComCore-NormArg $x) } }
+        $final = ComCore-Get $parent $last.name $argv
+      }
+      if ((ComCore-Has $st "save") -and $st.save) { $handles[[string]$st.save] = $final }
+      [void]$results.Add(@{ i = $si; path = $path; ok = $true; result = (ComCore-Out $final) })
+    } catch {
+      $allOk = $false
+      [void]$results.Add(@{ i = $si; path = $path; ok = $false; error = (ComCore-ErrText $_) })
+      if (-not ((ComCore-Has $a "continueOnError") -and $a.continueOnError)) { break }
+    }
+  }
+  return @{ ok = $allOk; steps = $results.ToArray() }
+}
+# <<< com-core
+
 function Invoke-ComMain($a) {
   try {
-    $segments = @($a.path -split '\.')
-    if ($a.attach) { $root = [Runtime.InteropServices.Marshal]::GetActiveObject([string]$a.progId) }
-    else { $root = New-Object -ComObject ([string]$a.progId) }
-    $obj = $root
-    for ($i = 0; $i -lt $segments.Count - 1; $i++) {
-      $obj = $obj.GetType().InvokeMember($segments[$i], [Reflection.BindingFlags]::GetProperty, $null, $obj, @())
-    }
-    $last = $segments[$segments.Count - 1]
-    if ($a.PSObject.Properties.Name -contains "setValue") {
-      [void]$obj.GetType().InvokeMember($last, [Reflection.BindingFlags]::SetProperty, $null, $obj, @($a.setValue))
-      return @{ ok = $true; detail = @{ ok = $true; action = "set"; path = $a.path } }
-    }
-    $args2 = @(); if ($a.PSObject.Properties.Name -contains "args" -and $a.args) { $args2 = @($a.args) }
-    $flags = if ($args2.Count -gt 0) { [Reflection.BindingFlags]::InvokeMethod } else { [Reflection.BindingFlags]'InvokeMethod,GetProperty' }
-    $ret = $obj.GetType().InvokeMember($last, $flags, $null, $obj, $args2)
-    $retStr = if ($null -ne $ret) { [string]$ret } else { $null }
-    return @{ ok = $true; detail = @{ ok = $true; action = "invoke"; path = $a.path; result = $retStr } }
+    $r = ComCore-Run $a
+    if ($r.ok) { return @{ ok = $true; detail = $r } }
+    $bad = @($r.steps | Where-Object { -not $_.ok } | Select-Object -First 1)
+    $msg = if ($bad.Count -gt 0) { "step $($bad[0].i) ($($bad[0].path)): $($bad[0].error)" } else { "failed" }
+    return @{ ok = $false; limitation = @{ code = "E_PS_FAILED"; collector = "invoke-com"; message = $msg }; detail = $r }
   } catch {
-    return @{ ok = $false; limitation = @{ code = "E_PS_FAILED"; collector = "invoke-com"; message = $_.Exception.Message } }
+    return @{ ok = $false; limitation = @{ code = "E_PS_FAILED"; collector = "invoke-com"; message = (ComCore-ErrText $_) } }
   }
+}
+
+# IF-30: read-only file access under program folders only
+$AllowRoots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:CommonProgramFiles, ${env:CommonProgramFiles(x86)}, (Join-Path $env:SystemRoot "System32"), (Join-Path $env:SystemRoot "SysWOW64")) |
+  Where-Object { $_ } | ForEach-Object { [IO.Path]::GetFullPath($_).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar }
+function Resolve-Allowed([string]$p) {
+  if (-not $p) { throw "path is required" }
+  $f = [IO.Path]::GetFullPath($p)
+  foreach ($r in $AllowRoots) { if ($f.StartsWith($r, [StringComparison]::OrdinalIgnoreCase) -or ($f + [IO.Path]::DirectorySeparatorChar) -ieq $r) { return $f } }
+  throw "path not allowed (program folders only): $f"
+}
+function Get-Listing([string]$p) {
+  $f = Resolve-Allowed $p
+  if (-not [IO.Directory]::Exists($f)) { throw "not a directory: $f" }
+  $items = New-Object System.Collections.ArrayList
+  foreach ($d in [IO.Directory]::GetDirectories($f)) { if ($items.Count -ge 5000) { break }; [void]$items.Add(@{ name = [IO.Path]::GetFileName($d); dir = $true }) }
+  foreach ($x in [IO.Directory]::GetFiles($f)) { if ($items.Count -ge 5000) { break }; [void]$items.Add(@{ name = [IO.Path]::GetFileName($x); dir = $false; size = (New-Object IO.FileInfo $x).Length }) }
+  return @{ ok = $true; path = $f; items = $items.ToArray() }
 }
 
 # 조작 하나를 별도 STA 런스페이스에서 시간제한을 두고 실행한다.
@@ -51,24 +266,6 @@ public static class NativeWin2 {
   public const uint WM_COMMAND = 0x0111;
 }
 "@
-    function Invoke-Com($a) {
-      $segments = @($a.path -split '\.')
-      if ($a.attach) { $root = [Runtime.InteropServices.Marshal]::GetActiveObject([string]$a.progId) }
-      else { $t = [Type]::GetTypeFromProgID([string]$a.progId); if (-not $t) { throw "ProgID를 찾을 수 없습니다: $($a.progId)" }; $root = [Activator]::CreateInstance($t) }
-      $obj = $root
-      for ($i = 0; $i -lt $segments.Count - 1; $i++) { $obj = $obj.GetType().InvokeMember($segments[$i], [Reflection.BindingFlags]::GetProperty, $null, $obj, @()) }
-      $last = $segments[$segments.Count - 1]
-      if ($a.PSObject.Properties.Name -contains "setValue") {
-        [void]$obj.GetType().InvokeMember($last, [Reflection.BindingFlags]::SetProperty, $null, $obj, @($a.setValue))
-        return @{ ok = $true; detail = @{ ok = $true; action = "set"; path = $a.path } }
-      }
-      $args2 = @(); if ($a.PSObject.Properties.Name -contains "args" -and $a.args) { $args2 = @($a.args) }
-      # 인자가 없으면 메서드/속성 모두 허용(GetProperty 겸용) → Version·Name 같은 속성도 값을 돌려받는다
-      $flags = if ($args2.Count -gt 0) { [Reflection.BindingFlags]::InvokeMethod } else { [Reflection.BindingFlags]'InvokeMethod,GetProperty' }
-      $ret = $obj.GetType().InvokeMember($last, $flags, $null, $obj, $args2)
-      $retStr = if ($null -ne $ret) { [string]$ret } else { $null }
-      return @{ ok = $true; detail = @{ ok = $true; action = "invoke"; path = $a.path; result = $retStr } }
-    }
     function Invoke-Window($a) {
       $procs = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($_.Path -ieq [string]$a.target) })
       $h = ($procs | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1).MainWindowHandle
@@ -131,10 +328,9 @@ public static class NativeWin2 {
       return @{ ok = $true; detail = @{ pattern = $pattern; name = [string]$cur.Name; automationId = [string]$cur.AutomationId; matchCount = $found.Count } }
     }
     switch ([string]$action.kind) {
-      "com" { Invoke-Com $action }
       "window" { Invoke-Window $action }
       "uia" { Invoke-Uia $action }
-      default { @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "agent"; message = "com/window/uia만 지원합니다." } } }
+      default { @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "agent"; message = "window/uia만 이 경로로 실행합니다 (com은 메인 스레드)." } } }
     }
   }).AddArgument($action)
   $async = $ps.BeginInvoke()
@@ -175,22 +371,42 @@ while ($listener.IsListening) {
     if ($req.Headers["x-rea-token"] -ne $Token) {
       $resp.StatusCode = 401; $out = @{ error = "토큰이 올바르지 않습니다." }
     } elseif ($req.Url.AbsolutePath -eq "/health") {
-      $out = @{ ok = $true; node = $env:COMPUTERNAME; version = $AgentVersion; capabilities = @("com", "window", "uia") }
+      $out = @{ ok = $true; node = $env:COMPUTERNAME; version = $AgentVersion; capabilities = @("com", "com-steps", "com-each", "window", "uia", "list", "file") }
+    } elseif ($req.Url.AbsolutePath -eq "/list") {
+      $out = Get-Listing ([string]$req.QueryString["path"])
+    } elseif ($req.Url.AbsolutePath -eq "/file") {
+      $fp = Resolve-Allowed ([string]$req.QueryString["path"])
+      if (-not [IO.File]::Exists($fp)) { throw "file not found: $fp" }
+      $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $fp).Hash.ToLowerInvariant()
+      $fs = [IO.File]::OpenRead($fp)
+      $flen = $fs.Length
+      try {
+        $resp.ContentType = "application/octet-stream"
+        $resp.ContentLength64 = $fs.Length
+        $resp.AddHeader("X-Sha256", $sha)
+        $fs.CopyTo($resp.OutputStream, 1048576)
+      } finally { $fs.Close() }
+      Write-Host "file: $fp ($flen bytes)"
+      $out = $null
     } elseif ($req.Url.AbsolutePath -eq "/invoke" -and $req.HttpMethod -eq "POST") {
       $body = (New-Object IO.StreamReader($req.InputStream, $req.ContentEncoding)).ReadToEnd()
       $parsed = $body | ConvertFrom-Json
-      Write-Host "invoke: $($parsed.action.kind) $($parsed.action.path)$($parsed.action.commandId)"
+      Write-Host "invoke: $($parsed.action.kind) $($parsed.action.path)$($parsed.action.commandId) steps=$(@($parsed.action.steps).Count)"
       if ([string]$parsed.action.kind -eq "com") { $out = Invoke-ComMain $parsed.action }
       else { $out = Invoke-WithTimeout $parsed.action 25000 }
     } else {
       $resp.StatusCode = 404; $out = @{ error = "알 수 없는 경로" }
     }
   } catch {
-    $resp.StatusCode = 500; $out = @{ ok = $false; limitation = @{ code = "E_PS_FAILED"; collector = "agent"; message = $_.Exception.Message } }
+    try { $resp.StatusCode = 500 } catch {}; $out = @{ ok = $false; limitation = @{ code = "E_PS_FAILED"; collector = "agent"; message = $_.Exception.Message } }
   }
-  $json = ConvertTo-Json -InputObject $out -Depth 8 -Compress
-  $buf = [Text.Encoding]::UTF8.GetBytes($json)
-  $resp.ContentType = "application/json; charset=utf-8"
-  $resp.OutputStream.Write($buf, 0, $buf.Length)
-  $resp.OutputStream.Close()
+  try {
+    if ($null -ne $out) {
+      $json = ConvertTo-Json -InputObject $out -Depth 12 -Compress
+      $buf = [Text.Encoding]::UTF8.GetBytes($json)
+      $resp.ContentType = "application/json; charset=utf-8"
+      $resp.OutputStream.Write($buf, 0, $buf.Length)
+    }
+    $resp.OutputStream.Close()
+  } catch { Write-Host "response write failed: $($_.Exception.Message)" }
 }

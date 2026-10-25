@@ -24,7 +24,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"test/unit/**/*.test.ts\"",
     "e2e": "node --import tsx --test \"test/e2e/**/*.test.ts\"",
-    "check:boundaries": "tsx scripts/check-boundaries.ts"
+    "check:boundaries": "tsx scripts/check-boundaries.ts",
+    "build:ps": "tsx scripts/build-ps.ts"
   },
   "dependencies": {
     "tsx": "^4.19.0"

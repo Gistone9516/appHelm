@@ -31,11 +31,21 @@ apphelm invoke-com --progid Word.Application --attach --path "Selection.TypeText
 apphelm invoke-window --target "C:\Windows\System32\notepad.exe" --wm 26
 apphelm invoke-uia --target "C:\...\WINWORD.EXE" --name "편집 사용" --pattern Invoke
 
+# 여러 단계를 한 번에: 단계 배열을 JSON 파일로 (경로 문법: Paragraphs(3).Range, $저장이름.멤버)
+#   [{"path":"ActiveDocument.Paragraphs(1).Range","save":"p"},{"path":"$p.Style","setValue":-2},{"path":"ActiveDocument.Paragraphs","each":{"props":["Range.Text"]}}]
+apphelm invoke-com --progid Word.Application --attach --steps steps.json
+
+# COM 타입 라이브러리 전체(서명·기본값·상수)를 덤프하고 찾아보기
+apphelm typelib "C:\경로\MSWORD.OLB"
+apphelm ref Word Document.SaveAs2
+
 # 원격: 대상 PC에서 에이전트를 띄우고(아래), 조작하는 쪽에서 --host 로 지정
 #  - 대상이 Node가 있으면:   apphelm serve
 #  - 대상이 무설치면:         powershell -ExecutionPolicy Bypass -File agent\apphelm-agent.ps1 -Token <토큰>
 $env:APPHELM_TOKEN="<토큰>"
 apphelm map 대상.exe --host book
+apphelm ls --host book --path "C:\Program Files\Microsoft Office"     # 프로그램 폴더만, 읽기 전용
+apphelm pull --host book --path "C:\...\WINWORD.EXE" --out 받은폴더     # 크기·SHA-256 확인
 apphelm invoke-com --progid Word.Application --attach --path "Selection.TypeText" --text "안녕" --host 100.67.200.125
 ```
 
@@ -48,7 +58,7 @@ claude mcp add apphelm -- cmd /c apphelm-mcp
 #   claude mcp add apphelm -e APPHELM_TOKEN=<토큰> -- cmd /c apphelm-mcp
 ```
 
-등록 후 Claude Code에서 `map_program`, `get_operation_doc`, `invoke_operation`, `list_hosts`를 쓸 수 있다. stdout은 JSON-RPC 전용이라 로그는 전부 stderr로 나간다.
+등록 후 Claude Code에서 `map_program`, `get_operation_doc`, `invoke_operation`(단계 묶음), `com_reference`(COM 서명·상수 찾기), `list_hosts`를 쓸 수 있다. stdout은 JSON-RPC 전용이라 로그는 전부 stderr로 나간다.
 
 네이티브 동작 추적 (5차, Ghidra 필요):
 
@@ -71,7 +81,7 @@ npm run e2e
 ## 구조
 
 ```
-_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-25, 실측 사실 F-1~F-24). 코드와 충돌하면 이 문서가 이긴다
+_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-31, 실측 사실 F-1~F-25). 코드와 충돌하면 이 문서가 이긴다
 bin/apphelm.mjs    실행 진입점 (tsx로 소스를 바로 실행)
 agent/apphelm-agent.ps1    무설치 원격 에이전트 (Windows 기본 PowerShell/.NET만, 대상 PC에서 직접 실행)
 src/invoke/            실행 계층: com·window·uia(화면 요소 클릭/토글/값)·http·shell
@@ -82,7 +92,9 @@ src/core/              공유 타입, 부작용 허용 판정(IF-2), 파이프�
 src/pe/                PE 헤더·import 표·리소스 디렉터리 읽기, MUI 파일 탐색
 src/decoders/          리소스 바이트 해석: 메뉴·단축키·문자열·버전·대화상자, Delphi DFM, Electron asar
 src/rea-bridge/        REA CLI 실행(버전 6.7.0 고정, .NET·Electron·추적에만)
-src/ps/                PowerShell 5.1 스크립트 실행기와 스크립트(scripts/*.ps1, ASCII 전용)
+src/ps/                PowerShell 5.1 스크립트 실행기와 스크립트(scripts/*.ps1, ASCII 전용). com-core.ps1은 COM 실행 로직 원본
+src/typelib/           타입 라이브러리 전체 덤프와 찾아보기 (서명·기본값·열거형 상수)
+scripts/build-ps.ts    com-core.ps1을 에이전트와 invoke-com.ps1에 넣는다 (npm run build:ps)
 src/session/           화면이 필요한 스크립트를 사용자 세션에서 실행 (서비스 세션이면 1회용 예약 작업)
 src/collectors/        수집원
   pe-resources/          메뉴·단축키·대화상자·문자열·버전 리소스 (네이티브)
@@ -113,6 +125,7 @@ test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 - **런타임마다 UI 정의가 있는 곳이 다르다 (IF-22~IF-24).** .NET은 `InitializeComponent`의 호출·필드 순서로 폼을 추정하고(REA가 IL 오프셋을 안 줘서 추정이므로 신뢰도 0.5, F-13), Delphi는 RCDATA의 이진 폼(TPF0)을 직접 해석하며, Electron은 asar에서 package.json과 fuse만 읽는다. 전체 JS 분석은 느리고 출력이 커서(F-15) 하지 않는다.
 - **화면 수집은 사용자 세션에서 한다 (IF-14, IF-20).** 서비스 세션(Session 0)에서는 창이 보이지 않는다(F-7). 그래서 1회용 예약 작업으로 사용자 세션에서 스크립트를 돌리고, 끝나면 작업을 지운다.
 - **PowerShell과는 파일로 주고받는다 (IF-21).** 스크립트는 ASCII만 쓰고, 입출력은 UTF-8 JSON 파일이다. PowerShell 5.1이 원소 1개 배열을 값으로 풀어 버리므로(F-11), 배열은 TypeScript 경계에서 `asArray()`로 맞춘다.
+- **COM 실행 로직은 한 벌이다 (IF-29).** 원격 에이전트는 파일 하나로 배포해야 해서 공용 파일을 불러올 수 없다. 그래서 `src/ps/com-core.ps1`을 원본으로 두고 빌드 스크립트가 에이전트와 로컬 스크립트에 그대로 넣는다. 예전에는 같은 로직이 세 벌이라 한쪽만 고쳐질 수 있었다. 테스트가 세 곳이 같은지 확인한다.
 - **수집원은 실패해도 예외를 던지지 않는다 (IF-1).** 일부가 실패해도 나머지 결과로 문서를 만들고, 실패는 "한계"에 적는다.
 - **대상 프로그램을 실행하거나 붙는 수집은 플래그가 있어야 한다 (IF-2).** 판정은 `src/core/policy.ts` 한 곳에서만 한다.
 
