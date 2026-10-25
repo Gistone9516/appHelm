@@ -100,9 +100,10 @@ test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 - 2차 사이클 완료: 셸 동사·URL 프로토콜·명령줄, COM TypeLib, 열린 포트, 사용자 세션의 UIA. 메모장, Internet Explorer(COM), 탐색기(UIA)로 검증했다.
 - 3차 사이클 완료: .NET WinForms 폼, Delphi DFM, Electron(package.json·fuse). 직접 빌드한 WinForms 앱, Git 설치 제거기(Delphi), Discord(Electron)로 검증했다.
 - 4차 진행 중:
-  - 완료: 실행 계층(COM·창·HTTP), Tailscale 에이전트 전송(serve/무설치 PowerShell 에이전트/--host). COM·창 조작과 Tailscale 왕복을 이 PC에서 검증했다.
-  - 남음: 원격 노드(.125)에서 실제 앱 조작 시험, MCP 서버(`map_program`·`invoke_operation`)
+  - 완료: 실행 계층(COM·창·UIA·HTTP), Tailscale 에이전트 전송(serve/무설치 PowerShell 에이전트/--host). **원격 노드에서 실제 앱 조작을 검증**했다 — 노트북(.125)의 Word에 Tailscale로 붙어 UIA로 "편집 사용"을 누르고 COM으로 문장을 입력한 뒤 되읽어 확인(2026-10-25).
+  - 남음: MCP 서버(`map_program`·`invoke_operation`)
 - 원격 조작 메모: Tailscale은 연결만 준다. 조작은 대상 PC 안의 에이전트가 로컬로 실행한다. SSH·WinRM이 닫혀 있어 에이전트는 대상 PC에서 직접 실행해야 한다(무설치 `agent/rea-agent.ps1`). 에이전트는 토큰이 있어야 응답하고 loopback·Tailscale 주소에만 바인딩한다.
+  - **배포 시 반드시 `_인터페이스계약.md` §5 체크리스트**를 따른다(실패 원인 F-16~F-22). 핵심: 에이전트는 대상 앱과 같은 권한(일반 권한)으로 실행(관리자면 COM 붙기 실패), 일반 권한 바인딩용 urlacl 1회 등록, COM은 에이전트 메인 스레드에서 실행, 보호된 보기는 UIA로 먼저 해제.
 - 보류:
   - 대상을 직접 실행하는 수집(`cli-help`, `--allow-launch`로 자동 실행 후 UIA)은 부작용이 있어 따로 결정한다.
   - .NET 폼 글자 추정은 신뢰도가 낮다(IL 오프셋 부재). WPF(XAML/BAML)는 아직 해석하지 않는다.
