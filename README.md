@@ -23,6 +23,21 @@ node bin/rea-adapter.mjs map notepad --live
 - REA 첫 실행은 패키지 다운로드 때문에 1분 정도 걸리고, 이후에는 대상 하나에 약 10초가 걸린다.
 - 본인이 소유하거나 분석을 허가받은 프로그램에만 쓴다(저작권법 제101조의4).
 
+조작(실행)과 원격:
+
+```
+# 실제 조작 (바로 실행됨)
+node bin/rea-adapter.mjs invoke-com --progid Word.Application --attach --path "Selection.TypeText" --args "[\"안녕\"]"
+node bin/rea-adapter.mjs invoke-window --target "C:\Windows\System32\notepad.exe" --wm 26
+
+# 원격: 대상 PC에서 에이전트를 띄우고(아래), 조작하는 쪽에서 --host 로 지정
+#  - 대상이 Node가 있으면:   node bin/rea-adapter.mjs serve
+#  - 대상이 무설치면:         powershell -ExecutionPolicy Bypass -File agent\rea-agent.ps1 -Token <토큰>
+$env:REA_ADAPTER_TOKEN="<토큰>"
+node bin/rea-adapter.mjs map 대상.exe --host book
+node bin/rea-adapter.mjs invoke-com --progid Word.Application --attach --path "Selection.TypeText" --args "[\"안녕\"]" --host 100.67.200.125
+```
+
 검증 명령:
 
 ```
@@ -37,6 +52,11 @@ npm run e2e
 ```
 _인터페이스계약.md     공유 계약 (규칙 IF-1~IF-24, 실측 사실 F-1~F-15). 코드와 충돌하면 이 문서가 이긴다
 bin/rea-adapter.mjs    실행 진입점 (tsx로 소스를 바로 실행)
+agent/rea-agent.ps1    무설치 원격 에이전트 (Windows 기본 PowerShell/.NET만, 대상 PC에서 직접 실행)
+src/invoke/            실행 계층: com·window·http·shell
+src/server/            에이전트 HTTP 핸들러 (map·invoke)
+src/transport/         Tailscale 노드 이름/IP 해석
+src/cli/               map·invoke-*·serve 명령과 원격 클라이언트
 src/core/              공유 타입, 부작용 허용 판정(IF-2), 파이프라인 (수집원 동시 실행)
 src/pe/                PE 헤더·import 표 읽기, MUI 파일 탐색
 src/decoders/          리소스 바이트 해석: 메뉴·단축키·문자열·버전·대화상자, Delphi DFM, Electron asar
@@ -78,8 +98,10 @@ test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 - 1차 사이클 완료: 네이티브 exe의 메뉴, 단축키, 대화상자, 버전, import 기반 기능. 메모장, 레지스트리 편집기, 그림판으로 검증했다.
 - 2차 사이클 완료: 셸 동사·URL 프로토콜·명령줄, COM TypeLib, 열린 포트, 사용자 세션의 UIA. 메모장, Internet Explorer(COM), 탐색기(UIA)로 검증했다.
 - 3차 사이클 완료: .NET WinForms 폼, Delphi DFM, Electron(package.json·fuse). 직접 빌드한 WinForms 앱, Git 설치 제거기(Delphi), Discord(Electron)로 검증했다.
-- 다음 사이클:
-  - 4차: MCP 서버(`map_program`, `get_operation_doc`)와 실행 계층(COM 호출·WM_COMMAND·CDP)
+- 4차 진행 중:
+  - 완료: 실행 계층(COM·창·HTTP), Tailscale 에이전트 전송(serve/무설치 PowerShell 에이전트/--host). COM·창 조작과 Tailscale 왕복을 이 PC에서 검증했다.
+  - 남음: 원격 노드(.125)에서 실제 앱 조작 시험, MCP 서버(`map_program`·`invoke_operation`)
+- 원격 조작 메모: Tailscale은 연결만 준다. 조작은 대상 PC 안의 에이전트가 로컬로 실행한다. SSH·WinRM이 닫혀 있어 에이전트는 대상 PC에서 직접 실행해야 한다(무설치 `agent/rea-agent.ps1`). 에이전트는 토큰이 있어야 응답하고 loopback·Tailscale 주소에만 바인딩한다.
 - 보류:
   - 대상을 직접 실행하는 수집(`cli-help`, `--allow-launch`로 자동 실행 후 UIA)은 부작용이 있어 따로 결정한다.
   - .NET 폼 글자 추정은 신뢰도가 낮다(IL 오프셋 부재). WPF(XAML/BAML)는 아직 해석하지 않는다.
