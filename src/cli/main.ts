@@ -13,20 +13,46 @@ import { electronJs } from "../collectors/electron-js/index.ts";
 import { localPorts } from "../collectors/local-ports/index.ts";
 import { registryVerbs } from "../collectors/registry-verbs/index.ts";
 import { uiaSnapshot } from "../collectors/uia-snapshot/index.ts";
+import type { OperationDoc } from "../core/types.ts";
 import { merge } from "../merge/index.ts";
 import { createProbe } from "../probe/index.ts";
 import { createReaRunner } from "../rea-bridge/runner.ts";
 import { renderMarkdown } from "../render/markdown.ts";
+import { runInvoke } from "./invoke.ts";
+import { runServe } from "./serve.ts";
+import { remoteMap } from "./client.ts";
 
-const USAGE = `사용법: rea-adapter map <exe 경로 또는 이름> [옵션]
+const USAGE = `사용법: rea-adapter <명령> ...
 
-옵션:
+명령:
+  map <exe 경로 또는 이름>   조작 문서를 만든다
+  invoke-com                 COM 메서드/속성을 실행한다
+  invoke-window              실행 중인 창에 명령/키를 보낸다
+  invoke-http                발견한 로컬 포트로 요청을 보낸다
+  serve                      이 PC를 에이전트로 띄운다 (원격 조작용)
+
+map 옵션:
   --out <폴더>       결과를 저장할 폴더 (기본: ./rea-adapter-out)
   --lang <언어>      리소스 언어 (기본: 시스템 언어, 예: ko-KR)
   --timeout <ms>     REA 한 번 실행의 제한 시간 (기본: 180000)
   --live             실행 중인 프로그램의 화면 요소(UI Automation)를 읽음
   --allow-launch     대상 프로그램을 실행하는 수집 허용 (아직 해당 수집 없음)
-  --quiet            진행 로그를 숨김`;
+  --host <이름|IP>   원격 노드의 에이전트로 보낸다 (Tailscale)
+  --quiet            진행 로그를 숨김
+
+invoke-com 옵션:
+  --progid <ProgID>  예: Word.Application
+  --attach           이미 떠 있는 인스턴스에 붙는다
+  --path <경로>      예: Selection.TypeText (속성 경로 + 끝 메서드/속성)
+  --args <JSON배열>  메서드 인자
+  --set <JSON값>     속성 설정 값
+  --host <이름|IP>   원격 노드에서 실행
+
+invoke-window 옵션:
+  --target <exe 경로>  대상 실행 파일
+  --wm <명령ID>        WM_COMMAND로 메뉴 명령 실행
+  --keys <키>          SendKeys 형식 (예: ^s = Ctrl+S)
+  --host <이름|IP>     원격 노드에서 실행`;
 
 const NOTICE = "[REA Adapter] 본인이 소유하거나 분석을 허가받은 프로그램에만 사용하세요 (저작권법 제101조의4: 호환 목적의 역분석만 허용).";
 
@@ -38,6 +64,7 @@ interface Args {
   live: boolean;
   launch: boolean;
   quiet: boolean;
+  host?: string;
 }
 
 function parseArgs(argv: string[]): Args | string {
@@ -49,6 +76,7 @@ function parseArgs(argv: string[]): Args | string {
     if (v === "--out") a.out = rest[++i] ?? a.out;
     else if (v === "--lang") a.lang = rest[++i] ?? a.lang;
     else if (v === "--timeout") a.timeoutMs = Number(rest[++i] ?? a.timeoutMs);
+    else if (v === "--host") a.host = rest[++i];
     else if (v === "--live") a.live = true;
     else if (v === "--allow-launch") a.launch = true;
     else if (v === "--quiet") a.quiet = true;
@@ -72,18 +100,27 @@ function showNoticeOnce(): void {
   }
 }
 
-async function main(): Promise<number> {
-  const args = parseArgs(process.argv.slice(2));
+export async function runMap(rest: string[]): Promise<number> {
+  const args = parseArgs(["map", ...rest]);
   if (typeof args === "string") {
     process.stderr.write(args + "\n");
     return 2;
   }
-  showNoticeOnce();
   const log = (m: string) => {
     if (!args.quiet) process.stderr.write(`· ${m}\n`);
   };
   const workDir = join(tmpdir(), "rea-adapter");
   mkdirSync(workDir, { recursive: true });
+  // 원격 노드로 위임
+  if (args.host) {
+    const res = await remoteMap(args.host, args.target!, { live: args.live, lang: args.lang });
+    if (!res.ok) {
+      process.stderr.write(`원격 오류: ${res.error}\n`);
+      return 1;
+    }
+    writeDoc(res.doc, args.out, log);
+    return 0;
+  }
   const ctx: CollectorContext = {
     allow: { live: args.live, launch: args.launch },
     timeoutMs: args.timeoutMs,
@@ -92,13 +129,19 @@ async function main(): Promise<number> {
     rea: createReaRunner({ workDir, timeoutMs: args.timeoutMs, log }),
     log,
   };
-  const collectors = [peResources, peImports, registryVerbs, comTypelib, localPorts, dotnet, delphiDfm, electronJs, uiaSnapshot];
-  const result = await mapProgram(args.target!, ctx, { probe: createProbe(args.lang), collectors, merge });
+  const result = await mapProgram(args.target!, ctx, { probe: createProbe(args.lang), collectors: ALL_COLLECTORS, merge });
   if ("error" in result) {
     for (const l of result.error) process.stderr.write(`오류: ${l.message}${l.hint ? ` (${l.hint})` : ""}\n`);
     return 1;
   }
-  const outDir = resolve(args.out);
+  writeDoc(result, args.out, log);
+  return 0;
+}
+
+export const ALL_COLLECTORS = [peResources, peImports, registryVerbs, comTypelib, localPorts, dotnet, delphiDfm, electronJs, uiaSnapshot];
+
+function writeDoc(result: OperationDoc, out: string, log: (m: string) => void): void {
+  const outDir = resolve(out);
   mkdirSync(outDir, { recursive: true });
   const stem = basename(result.target.path).replace(/\.[^.]+$/, "");
   const jsonPath = join(outDir, `${stem}.ops.json`);
@@ -108,7 +151,24 @@ async function main(): Promise<number> {
   writeFileSync(mdPath, md, "utf8");
   process.stdout.write(md);
   log(`저장: ${mdPath}`);
-  return 0;
+}
+
+async function main(): Promise<number> {
+  const [cmd, ...rest] = process.argv.slice(2);
+  showNoticeOnce();
+  switch (cmd) {
+    case "map":
+      return runMap(rest);
+    case "invoke-com":
+    case "invoke-window":
+    case "invoke-http":
+      return runInvoke(cmd, rest);
+    case "serve":
+      return runServe(rest);
+    default:
+      process.stderr.write(USAGE + "\n");
+      return cmd ? 2 : 0;
+  }
 }
 
 main().then(
