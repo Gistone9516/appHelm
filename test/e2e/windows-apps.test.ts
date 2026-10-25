@@ -9,10 +9,10 @@ import type { OperationDoc } from "../../src/core/types.ts";
 import { parsePe, readImports } from "../../src/pe/pe.ts";
 
 const skip = process.platform !== "win32";
-const out = mkdtempSync(join(tmpdir(), "rea-adapter-e2e-"));
+const out = mkdtempSync(join(tmpdir(), "apphelm-e2e-"));
 
 function mapApp(target: string, stem: string, extra: string[] = []): { md: string; doc: OperationDoc } {
-  const r = spawnSync(process.execPath, ["bin/rea-adapter.mjs", "map", target, "--out", out, "--quiet", ...extra], { encoding: "utf8", timeout: 300000 });
+  const r = spawnSync(process.execPath, ["bin/apphelm.mjs", "map", target, "--out", out, "--quiet", ...extra], { encoding: "utf8", timeout: 300000 });
   assert.equal(r.status, 0, r.stderr);
   return { md: r.stdout, doc: JSON.parse(readFileSync(join(out, `${stem}.ops.json`), "utf8")) as OperationDoc };
 }

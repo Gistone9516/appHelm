@@ -8,7 +8,7 @@ import { resolveHost } from "./host.ts";
 export const DEFAULT_PORT = 47817;
 
 function token(): string {
-  return process.env.REA_ADAPTER_TOKEN ?? "";
+  return process.env.APPHELM_TOKEN ?? "";
 }
 
 function send<T>(method: "GET" | "POST", ip: string, port: number, path: string, body: unknown, timeoutMs: number): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
@@ -62,7 +62,7 @@ export async function remoteMap(
 export async function remoteInvoke(host: string, action: InvokeAction): Promise<{ ok: true; result: InvokeResult } | { ok: false; error: string }> {
   const r = resolveHost(host);
   if ("error" in r) return { ok: false, error: r.error };
-  if (!token()) return { ok: false, error: "REA_ADAPTER_TOKEN 환경 변수가 필요합니다 (에이전트와 같은 토큰)." };
+  if (!token()) return { ok: false, error: "APPHELM_TOKEN 환경 변수가 필요합니다 (에이전트와 같은 토큰)." };
   const res = await send<InvokeResult>("POST", r.ip, DEFAULT_PORT, "/invoke", { action }, 90000);
   return res.ok ? { ok: true, result: res.data } : res;
 }

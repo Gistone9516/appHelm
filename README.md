@@ -1,4 +1,4 @@
-# REA Adapter
+# AppHelm
 
 MCP를 지원하지 않는 Windows 프로그램을 AI가 조작할 수 있도록, 프로그램의 리소스와 Windows가 드러내는 창구를 읽어 **AI가 읽는 조작 문서**를 만드는 도구. 정보 수집의 일부는 [REA](https://github.com/morluto/rea)(MIT)를 하위 엔진으로 불러 쓴다. 깊은 역공학은 하지 않는다.
 
@@ -13,12 +13,12 @@ npm install
 그다음 명령 한 줄로 문서를 만든다.
 
 ```
-node bin/rea-adapter.mjs map notepad
-node bin/rea-adapter.mjs map "C:\Program Files\앱\app.exe" --out 결과폴더
-node bin/rea-adapter.mjs map notepad --live
+node bin/apphelm.mjs map notepad
+node bin/apphelm.mjs map "C:\Program Files\앱\app.exe" --out 결과폴더
+node bin/apphelm.mjs map notepad --live
 ```
 
-- Markdown 요약(4KB 이하)이 화면에 출력되고, `rea-adapter-out\<이름>.ops.md`와 전체 내용 `<이름>.ops.json`이 저장된다.
+- Markdown 요약(4KB 이하)이 화면에 출력되고, `apphelm-out\<이름>.ops.md`와 전체 내용 `<이름>.ops.json`이 저장된다.
 - `--live`를 붙이면 실행 중인 대상 창의 화면 요소(UI Automation)도 읽는다. 대상을 먼저 실행해 두어야 한다.
 - REA 첫 실행은 패키지 다운로드 때문에 1분 정도 걸리고, 이후에는 대상 하나에 약 10초가 걸린다.
 - 본인이 소유하거나 분석을 허가받은 프로그램에만 쓴다(저작권법 제101조의4).
@@ -27,25 +27,25 @@ node bin/rea-adapter.mjs map notepad --live
 
 ```
 # 실제 조작 (바로 실행됨)
-node bin/rea-adapter.mjs invoke-com --progid Word.Application --attach --path "Selection.TypeText" --args "[\"안녕\"]"
-node bin/rea-adapter.mjs invoke-window --target "C:\Windows\System32\notepad.exe" --wm 26
-node bin/rea-adapter.mjs invoke-uia --target "C:\...\WINWORD.EXE" --name "편집 사용" --pattern Invoke
+node bin/apphelm.mjs invoke-com --progid Word.Application --attach --path "Selection.TypeText" --args "[\"안녕\"]"
+node bin/apphelm.mjs invoke-window --target "C:\Windows\System32\notepad.exe" --wm 26
+node bin/apphelm.mjs invoke-uia --target "C:\...\WINWORD.EXE" --name "편집 사용" --pattern Invoke
 
 # 원격: 대상 PC에서 에이전트를 띄우고(아래), 조작하는 쪽에서 --host 로 지정
-#  - 대상이 Node가 있으면:   node bin/rea-adapter.mjs serve
-#  - 대상이 무설치면:         powershell -ExecutionPolicy Bypass -File agent\rea-agent.ps1 -Token <토큰>
-$env:REA_ADAPTER_TOKEN="<토큰>"
-node bin/rea-adapter.mjs map 대상.exe --host book
-node bin/rea-adapter.mjs invoke-com --progid Word.Application --attach --path "Selection.TypeText" --args "[\"안녕\"]" --host 100.67.200.125
+#  - 대상이 Node가 있으면:   node bin/apphelm.mjs serve
+#  - 대상이 무설치면:         powershell -ExecutionPolicy Bypass -File agent\apphelm-agent.ps1 -Token <토큰>
+$env:APPHELM_TOKEN="<토큰>"
+node bin/apphelm.mjs map 대상.exe --host book
+node bin/apphelm.mjs invoke-com --progid Word.Application --attach --path "Selection.TypeText" --args "[\"안녕\"]" --host 100.67.200.125
 ```
 
 MCP 서버 (Claude Code에서 직접 호출):
 
 ```
 # Claude Code에 등록 (한 번): 이 저장소 폴더에서
-claude mcp add --transport stdio rea-adapter -- node --import tsx "F:\SUAN\2026-2\REA Adapter\src\mcp\main.ts"
+claude mcp add --transport stdio apphelm -- node --import tsx "F:\SUAN\2026-2\AppHelm\src\mcp\main.ts"
 # 원격 조작을 쓰면 에이전트 토큰을 환경변수로:
-#   claude mcp add --transport stdio --env REA_ADAPTER_TOKEN=<토큰> rea-adapter -- node --import tsx "<경로>\src\mcp\main.ts"
+#   claude mcp add --transport stdio --env APPHELM_TOKEN=<토큰> apphelm -- node --import tsx "<경로>\src\mcp\main.ts"
 ```
 
 등록 후 Claude Code에서 `map_program`, `get_operation_doc`, `invoke_operation`, `list_hosts`를 쓸 수 있다. stdout은 JSON-RPC 전용이라 로그는 전부 stderr로 나간다.
@@ -54,7 +54,7 @@ claude mcp add --transport stdio rea-adapter -- node --import tsx "F:\SUAN\2026-
 
 ```
 # Ghidra 12.1.4 + JDK 21 설치 후 (환경변수 GHIDRA_INSTALL_DIR·JAVA_HOME 또는 C:\tools 기본 경로)
-node bin/rea-adapter.mjs trace "C:\경로\app.exe" --query 함수이름
+node bin/apphelm.mjs trace "C:\경로\app.exe" --query 함수이름
 ```
 
 느리다(콜드 스타트 수백 초). 네이티브 PE(x86/x64)만, .NET 등 관리 코드는 지원 안 한다. Windows Ghidra는 실험적·읽기 전용이다.
@@ -72,8 +72,8 @@ npm run e2e
 
 ```
 _인터페이스계약.md     공유 계약 (규칙 IF-1~IF-24, 실측 사실 F-1~F-15). 코드와 충돌하면 이 문서가 이긴다
-bin/rea-adapter.mjs    실행 진입점 (tsx로 소스를 바로 실행)
-agent/rea-agent.ps1    무설치 원격 에이전트 (Windows 기본 PowerShell/.NET만, 대상 PC에서 직접 실행)
+bin/apphelm.mjs    실행 진입점 (tsx로 소스를 바로 실행)
+agent/apphelm-agent.ps1    무설치 원격 에이전트 (Windows 기본 PowerShell/.NET만, 대상 PC에서 직접 실행)
 src/invoke/            실행 계층: com·window·uia(화면 요소 클릭/토글/값)·http·shell
 src/server/            에이전트 HTTP 핸들러 (map·invoke)
 src/transport/         Tailscale 노드 이름/IP 해석
@@ -99,7 +99,7 @@ src/rea-bridge/ghidra.ts  Ghidra/JDK 위치 감지와 REA 주입 환경 변수
 src/probe/             대상 판별 (경로나 이름 → 실행 파일, 종류, MUI, Electron 위치)
 src/merge/             수집 결과 → 조작 문서 (같은 명령 합치기, 이름 결정, 자동화 창구 정리)
 src/render/            Markdown 요약
-src/cli/               rea-adapter map 명령
+src/cli/               apphelm map 명령
 scripts/check-boundaries.ts   폴더 간 import 규칙 검사 (IF-3)
 test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 ```
@@ -124,8 +124,8 @@ test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 - 4차 완료:
   - 실행 계층(COM·창·UIA·HTTP), Tailscale 에이전트 전송(serve/무설치 PowerShell 에이전트/--host). **원격 노드에서 실제 앱 조작을 검증** — 노트북(.125)의 Word에 Tailscale로 붙어 UIA로 "편집 사용"을 누르고 COM으로 문장을 입력한 뒤 되읽어 확인(2026-10-25).
   - **MCP 서버**(`src/mcp/`, 의존성 0 stdio JSON-RPC): 도구 `list_hosts`·`map_program`·`get_operation_doc`·`invoke_operation`·`trace_native`. Claude Code가 직접 호출해 원격 PC 앱까지 조작. JSON-RPC 왕복(initialize·tools/list·tools/call) 검증 완료.
-- 5차 완료(옵트인): Ghidra 네이티브 동작 추적 티어. `rea-adapter trace <exe> [--query 함수]`와 MCP `trace_native`. Ghidra 12.1.4 + JDK 21(`C:\tools`) 설치, 메모장을 REA Ghidra 공급자로 분석(세그먼트·함수 794·문자열 557, 콜드 스타트 ~180초) 검증. 일반 `map`에는 넣지 않는다(느리고 실험적, 네이티브 PE만).
-- 원격 조작 메모: Tailscale은 연결만 준다. 조작은 대상 PC 안의 에이전트가 로컬로 실행한다. SSH·WinRM이 닫혀 있어 에이전트는 대상 PC에서 직접 실행해야 한다(무설치 `agent/rea-agent.ps1`). 에이전트는 토큰이 있어야 응답하고 loopback·Tailscale 주소에만 바인딩한다.
+- 5차 완료(옵트인): Ghidra 네이티브 동작 추적 티어. `apphelm trace <exe> [--query 함수]`와 MCP `trace_native`. Ghidra 12.1.4 + JDK 21(`C:\tools`) 설치, 메모장을 REA Ghidra 공급자로 분석(세그먼트·함수 794·문자열 557, 콜드 스타트 ~180초) 검증. 일반 `map`에는 넣지 않는다(느리고 실험적, 네이티브 PE만).
+- 원격 조작 메모: Tailscale은 연결만 준다. 조작은 대상 PC 안의 에이전트가 로컬로 실행한다. SSH·WinRM이 닫혀 있어 에이전트는 대상 PC에서 직접 실행해야 한다(무설치 `agent/apphelm-agent.ps1`). 에이전트는 토큰이 있어야 응답하고 loopback·Tailscale 주소에만 바인딩한다.
   - **배포 시 반드시 `_인터페이스계약.md` §5 체크리스트**를 따른다(실패 원인 F-16~F-22). 핵심: 에이전트는 대상 앱과 같은 권한(일반 권한)으로 실행(관리자면 COM 붙기 실패), 일반 권한 바인딩용 urlacl 1회 등록, COM은 에이전트 메인 스레드에서 실행, 보호된 보기는 UIA로 먼저 해제.
 - 보류:
   - 대상을 직접 실행하는 수집(`cli-help`, `--allow-launch`로 자동 실행 후 UIA)은 부작용이 있어 따로 결정한다.

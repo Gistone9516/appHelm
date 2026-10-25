@@ -97,7 +97,7 @@ export async function runInvoke(cmd: string, rest: string[]): Promise<number> {
     process.stdout.write(JSON.stringify(r.result, null, 2) + "\n");
     return r.result.ok ? 0 : 1;
   }
-  const workDir = join(tmpdir(), "rea-adapter");
+  const workDir = join(tmpdir(), "apphelm");
   mkdirSync(workDir, { recursive: true });
   const result = await invoke(action, { workDir, timeoutMs: 60000 });
   process.stdout.write(JSON.stringify(result, null, 2) + "\n");

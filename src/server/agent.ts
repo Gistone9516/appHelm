@@ -31,7 +31,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 }
 
 export async function startAgent(opts: AgentOptions): Promise<() => void> {
-  const workDir = join(tmpdir(), "rea-adapter");
+  const workDir = join(tmpdir(), "apphelm");
   mkdirSync(workDir, { recursive: true });
 
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {

@@ -1,7 +1,7 @@
-# REA Adapter - 설치가 필요 없는 원격 에이전트 (Windows 기본 PowerShell/.NET만 사용)
+# AppHelm - 설치가 필요 없는 원격 에이전트 (Windows 기본 PowerShell/.NET만 사용)
 # 노트북 등 원격 노드에서 "직접" 실행하세요. 그 세션에서 COM·창 조작을 합니다.
-#   사용법:  powershell -ExecutionPolicy Bypass -File rea-agent.ps1 -Token <토큰> [-Port 47817]
-# 조작하는 쪽(.53)에서:  $env:REA_ADAPTER_TOKEN="<토큰>"; rea-adapter invoke-com ... --host <이 노드>
+#   사용법:  powershell -ExecutionPolicy Bypass -File apphelm-agent.ps1 -Token <토큰> [-Port 47817]
+# 조작하는 쪽(.53)에서:  $env:APPHELM_TOKEN="<토큰>"; apphelm invoke-com ... --host <이 노드>
 param([string]$Token, [int]$Port = 47817)
 $ErrorActionPreference = "Stop"
 $AgentVersion = "2026-10-25.5-com"  # 조작하는 쪽이 /health로 버전을 확인한다
@@ -165,7 +165,7 @@ catch {
   throw
 }
 Write-Host "REA 에이전트 실행 중 (버전 $AgentVersion): $($prefixes -join ', ')"
-Write-Host "조작하는 쪽에서: rea-adapter invoke-com ... --host $(if($tsIp){$tsIp}else{'127.0.0.1'})  (토큰 일치 필요)"
+Write-Host "조작하는 쪽에서: apphelm invoke-com ... --host $(if($tsIp){$tsIp}else{'127.0.0.1'})  (토큰 일치 필요)"
 
 while ($listener.IsListening) {
   $ctx = $listener.GetContext()

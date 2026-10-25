@@ -1,4 +1,4 @@
-// REA Adapter MCP stdio 서버 (의존성 없음). Claude Code가 map/invoke를 직접 호출한다.
+// AppHelm MCP stdio 서버 (의존성 없음). Claude Code가 map/invoke를 직접 호출한다.
 // stdout은 JSON-RPC 전용. 모든 로그는 stderr.
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,8 +17,8 @@ import { runNativeTrace } from "../trace/index.ts";
 import { NO_REPLY, serveStdio } from "./jsonrpc.ts";
 
 const PROTOCOL = "2024-11-05";
-const DOC_DIR = join(process.env.LOCALAPPDATA ?? tmpdir(), "rea-adapter", "docs");
-const WORK_DIR = join(tmpdir(), "rea-adapter");
+const DOC_DIR = join(process.env.LOCALAPPDATA ?? tmpdir(), "apphelm", "docs");
+const WORK_DIR = join(tmpdir(), "apphelm");
 // MCP에 노출하는 조작 종류 (shell 제외: 임의 명령 실행 방지, 주변 브리핑 2026-10-25)
 const ALLOWED_INVOKE = new Set(["com", "window", "uia", "http"]);
 
@@ -59,7 +59,7 @@ async function toolMapProgram(args: Record<string, unknown>): Promise<ReturnType
   let doc: OperationDoc;
   if (host) {
     const r = await remoteMap(host, target, { live, lang });
-    if (!r.ok) return errText(`원격 map 실패 (${host}): ${r.error}\n(참고: 무설치 PowerShell 에이전트는 map을 지원하지 않습니다. 원격 map은 'rea-adapter serve' Node 에이전트 노드에서만 됩니다.)`);
+    if (!r.ok) return errText(`원격 map 실패 (${host}): ${r.error}\n(참고: 무설치 PowerShell 에이전트는 map을 지원하지 않습니다. 원격 map은 'apphelm serve' Node 에이전트 노드에서만 됩니다.)`);
     doc = r.doc;
   } else {
     const r = await localMap(target, live, lang);
@@ -147,7 +147,7 @@ async function toolTraceNative(args: Record<string, unknown>): Promise<ReturnTyp
 function toolListHosts(): ReturnType<typeof text> {
   const nodes = tailnetNodes();
   const rows = nodes.map((n) => `${n.ip}  ${n.name}  ${n.os}  ${n.online ? "online" : "offline"}`);
-  return text(["(로컬) 이 PC — host 생략 시 대상", ...rows, "", "원격 조작은 그 노드에서 agent/rea-agent.ps1(또는 rea-adapter serve)가 실행 중이어야 하며 같은 토큰이 필요합니다."].join("\n"));
+  return text(["(로컬) 이 PC — host 생략 시 대상", ...rows, "", "원격 조작은 그 노드에서 agent/apphelm-agent.ps1(또는 apphelm serve)가 실행 중이어야 하며 같은 토큰이 필요합니다."].join("\n"));
 }
 
 const TOOLS = [
@@ -215,14 +215,14 @@ const TOOLS = [
 ];
 
 export function startMcpServer(): void {
-  log("REA Adapter MCP 서버 시작 (stdio)");
+  log("AppHelm MCP 서버 시작 (stdio)");
   serveStdio(process.stdin, process.stdout, async (method, params) => {
     switch (method) {
       case "initialize":
         return {
           protocolVersion: typeof params.protocolVersion === "string" ? params.protocolVersion : PROTOCOL,
           capabilities: { tools: {} },
-          serverInfo: { name: "rea-adapter", version: "0.1.0" },
+          serverInfo: { name: "apphelm", version: "0.1.0" },
         };
       case "notifications/initialized":
       case "notifications/cancelled":

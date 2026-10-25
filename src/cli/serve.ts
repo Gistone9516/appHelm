@@ -1,4 +1,4 @@
-// rea-adapter serve : 이 PC를 에이전트로 띄운다. loopback과 Tailscale 주소에만 바인딩한다.
+// apphelm serve : 이 PC를 에이전트로 띄운다. loopback과 Tailscale 주소에만 바인딩한다.
 import { randomBytes } from "node:crypto";
 import { startAgent } from "../server/agent.ts";
 import { ownTailscaleIp } from "../transport/host.ts";
@@ -7,7 +7,7 @@ import { DEFAULT_PORT } from "../transport/client.ts";
 
 export async function runServe(rest: string[]): Promise<number> {
   let port = DEFAULT_PORT;
-  let token = process.env.REA_ADAPTER_TOKEN ?? "";
+  let token = process.env.APPHELM_TOKEN ?? "";
   let localOnly = false;
   for (let i = 0; i < rest.length; i++) {
     const v = rest[i]!;
@@ -17,7 +17,7 @@ export async function runServe(rest: string[]): Promise<number> {
   }
   if (!token) {
     token = randomBytes(16).toString("hex");
-    process.stderr.write(`토큰을 새로 만들었습니다. 조작하는 쪽에서 이 값을 쓰세요:\n  REA_ADAPTER_TOKEN=${token}\n`);
+    process.stderr.write(`토큰을 새로 만들었습니다. 조작하는 쪽에서 이 값을 쓰세요:\n  APPHELM_TOKEN=${token}\n`);
   }
 
   const binds = ["127.0.0.1"];
@@ -27,7 +27,7 @@ export async function runServe(rest: string[]): Promise<number> {
 
   const log = (m: string) => process.stderr.write(`· ${m}\n`);
   const stop = await startAgent({ token, port, binds, collectors: ALL_COLLECTORS, log });
-  process.stderr.write(`준비됐습니다. 조작하는 쪽에서: rea-adapter map <대상> --host ${ts ?? "127.0.0.1"}\n`);
+  process.stderr.write(`준비됐습니다. 조작하는 쪽에서: apphelm map <대상> --host ${ts ?? "127.0.0.1"}\n`);
   process.on("SIGINT", () => {
     stop();
     process.exit(0);

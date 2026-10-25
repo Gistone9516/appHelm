@@ -1,4 +1,4 @@
-// rea-adapter map <대상> : 조작 문서를 만들어 파일로 저장하고 Markdown 요약을 출력한다.
+// apphelm map <대상> : 조작 문서를 만들어 파일로 저장하고 Markdown 요약을 출력한다.
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -15,7 +15,7 @@ import { runServe } from "./serve.ts";
 import { runNativeTrace } from "../trace/index.ts";
 import { remoteMap } from "../transport/client.ts";
 
-const USAGE = `사용법: rea-adapter <명령> ...
+const USAGE = `사용법: apphelm <명령> ...
 
 명령:
   map <exe 경로 또는 이름>   조작 문서를 만든다
@@ -25,7 +25,7 @@ const USAGE = `사용법: rea-adapter <명령> ...
   serve                      이 PC를 에이전트로 띄운다 (원격 조작용)
 
 map 옵션:
-  --out <폴더>       결과를 저장할 폴더 (기본: ./rea-adapter-out)
+  --out <폴더>       결과를 저장할 폴더 (기본: ./apphelm-out)
   --lang <언어>      리소스 언어 (기본: 시스템 언어, 예: ko-KR)
   --timeout <ms>     REA 한 번 실행의 제한 시간 (기본: 180000)
   --live             실행 중인 프로그램의 화면 요소(UI Automation)를 읽음
@@ -58,7 +58,7 @@ invoke-uia 옵션:
   --list               실행 대신 일치 요소 목록을 보여줌 (이름 확인용)
   --host <이름|IP>     원격 노드에서 실행`;
 
-const NOTICE = "[REA Adapter] 본인이 소유하거나 분석을 허가받은 프로그램에만 사용하세요 (저작권법 제101조의4: 호환 목적의 역분석만 허용).";
+const NOTICE = "[AppHelm] 본인이 소유하거나 분석을 허가받은 프로그램에만 사용하세요 (저작권법 제101조의4: 호환 목적의 역분석만 허용).";
 
 interface Args {
   target?: string;
@@ -74,7 +74,7 @@ interface Args {
 function parseArgs(argv: string[]): Args | string {
   const [cmd, ...rest] = argv;
   if (cmd !== "map") return USAGE;
-  const a: Args = { out: "rea-adapter-out", lang: Intl.DateTimeFormat().resolvedOptions().locale || "en-US", timeoutMs: 180000, live: false, launch: false, quiet: false };
+  const a: Args = { out: "apphelm-out", lang: Intl.DateTimeFormat().resolvedOptions().locale || "en-US", timeoutMs: 180000, live: false, launch: false, quiet: false };
   for (let i = 0; i < rest.length; i++) {
     const v = rest[i]!;
     if (v === "--out") a.out = rest[++i] ?? a.out;
@@ -92,7 +92,7 @@ function parseArgs(argv: string[]): Args | string {
 }
 
 function showNoticeOnce(): void {
-  const dir = join(process.env.LOCALAPPDATA ?? tmpdir(), "rea-adapter");
+  const dir = join(process.env.LOCALAPPDATA ?? tmpdir(), "apphelm");
   const marker = join(dir, "notice-v1");
   if (existsSync(marker)) return;
   process.stderr.write(NOTICE + "\n");
@@ -113,7 +113,7 @@ export async function runMap(rest: string[]): Promise<number> {
   const log = (m: string) => {
     if (!args.quiet) process.stderr.write(`· ${m}\n`);
   };
-  const workDir = join(tmpdir(), "rea-adapter");
+  const workDir = join(tmpdir(), "apphelm");
   mkdirSync(workDir, { recursive: true });
   // 원격 노드로 위임
   if (args.host) {
@@ -145,7 +145,7 @@ export async function runMap(rest: string[]): Promise<number> {
 export async function runTrace(rest: string[]): Promise<number> {
   const target = rest.find((v) => !v.startsWith("--"));
   if (!target) {
-    process.stderr.write("사용법: rea-adapter trace <exe 경로> [--query <함수이름>]\n");
+    process.stderr.write("사용법: apphelm trace <exe 경로> [--query <함수이름>]\n");
     return 2;
   }
   const qi = rest.indexOf("--query");

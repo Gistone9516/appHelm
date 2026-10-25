@@ -38,7 +38,7 @@ export async function runNativeTrace(target: string, opts: { query?: string; log
       },
     };
   }
-  const workDir = join(tmpdir(), "rea-adapter");
+  const workDir = join(tmpdir(), "apphelm");
   mkdirSync(workDir, { recursive: true });
   const timeoutMs = opts.timeoutMs ?? 900000;
   const log = opts.log ?? (() => {});

@@ -1,4 +1,4 @@
-// 3차 시험용 WinForms 앱. REA Adapter의 .NET 수집원이 무엇을 읽어 내는지 확인하는 데만 쓴다.
+// 3차 시험용 WinForms 앱. AppHelm의 .NET 수집원이 무엇을 읽어 내는지 확인하는 데만 쓴다.
 using System;
 using System.Windows.Forms;
 
