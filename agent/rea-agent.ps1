@@ -6,60 +6,63 @@ param([string]$Token, [int]$Port = 47817)
 $ErrorActionPreference = "Stop"
 if (-not $Token) { Write-Error "토큰이 필요합니다: -Token <값>"; exit 1 }
 
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public static class NativeWin {
+# 조작 하나를 별도 STA 런스페이스에서 시간제한을 두고 실행한다.
+# 보호된 보기의 Word 등으로 COM 호출이 멈춰도 에이전트 전체가 물리지 않게 한다.
+function Invoke-WithTimeout($action, [int]$timeoutMs) {
+  $ps = [PowerShell]::Create()
+  $ps.Runspace = [RunspaceFactory]::CreateRunspace()
+  $ps.Runspace.ApartmentState = "STA"
+  $ps.Runspace.Open()
+  [void]$ps.AddScript({
+    param($action)
+    Add-Type -TypeDefinition @"
+using System; using System.Runtime.InteropServices;
+public static class NativeWin2 {
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
   [DllImport("user32.dll", SetLastError=true)] public static extern bool SetForegroundWindow(IntPtr h);
   public const uint WM_COMMAND = 0x0111;
 }
 "@
-
-function Invoke-Com($a) {
-  $segments = @($a.path -split '\.')
-  if ($a.attach) { $root = [Runtime.InteropServices.Marshal]::GetActiveObject([string]$a.progId) }
-  else {
-    $t = [Type]::GetTypeFromProgID([string]$a.progId)
-    if (-not $t) { throw "ProgID를 찾을 수 없습니다: $($a.progId)" }
-    $root = [Activator]::CreateInstance($t)
-  }
-  $obj = $root
-  for ($i = 0; $i -lt $segments.Count - 1; $i++) {
-    $obj = $obj.GetType().InvokeMember($segments[$i], [Reflection.BindingFlags]::GetProperty, $null, $obj, @())
-  }
-  $last = $segments[$segments.Count - 1]
-  if ($a.PSObject.Properties.Name -contains "setValue") {
-    [void]$obj.GetType().InvokeMember($last, [Reflection.BindingFlags]::SetProperty, $null, $obj, @($a.setValue))
-    return @{ ok = $true; detail = @{ ok = $true; action = "set"; path = $a.path } }
-  }
-  $args2 = @(); if ($a.PSObject.Properties.Name -contains "args" -and $a.args) { $args2 = @($a.args) }
-  $ret = $obj.GetType().InvokeMember($last, [Reflection.BindingFlags]::InvokeMethod, $null, $obj, $args2)
-  $retStr = if ($null -ne $ret) { [string]$ret } else { $null }
-  return @{ ok = $true; detail = @{ ok = $true; action = "invoke"; path = $a.path; result = $retStr } }
-}
-
-function Invoke-Window($a) {
-  $procs = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($_.Path -ieq [string]$a.target) })
-  $h = ($procs | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1).MainWindowHandle
-  if (-not $h) { return @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-window"; message = "대상의 최상위 창을 찾지 못했습니다." } } }
-  if ($a.mode -eq "wm_command") {
-    [void][NativeWin]::SendMessage($h, [NativeWin]::WM_COMMAND, [IntPtr][int]$a.commandId, [IntPtr]::Zero)
-    return @{ ok = $true; detail = @{ ok = $true; mode = "wm_command"; commandId = [int]$a.commandId } }
-  } elseif ($a.mode -eq "keys") {
-    [void][NativeWin]::SetForegroundWindow($h); Start-Sleep -Milliseconds 150
-    Add-Type -AssemblyName System.Windows.Forms
-    [System.Windows.Forms.SendKeys]::SendWait([string]$a.keys)
-    return @{ ok = $true; detail = @{ ok = $true; mode = "keys"; keys = [string]$a.keys } }
-  }
-  return @{ ok = $false; limitation = @{ code = "E_PARSE"; collector = "invoke-window"; message = "알 수 없는 mode" } }
-}
-
-function Dispatch($action) {
-  switch ([string]$action.kind) {
-    "com" { return Invoke-Com $action }
-    "window" { return Invoke-Window $action }
-    default { return @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "agent"; message = "이 에이전트는 com/window만 지원합니다. http는 조작하는 쪽에서 직접 하세요." } } }
+    function Invoke-Com($a) {
+      $segments = @($a.path -split '\.')
+      if ($a.attach) { $root = [Runtime.InteropServices.Marshal]::GetActiveObject([string]$a.progId) }
+      else { $t = [Type]::GetTypeFromProgID([string]$a.progId); if (-not $t) { throw "ProgID를 찾을 수 없습니다: $($a.progId)" }; $root = [Activator]::CreateInstance($t) }
+      $obj = $root
+      for ($i = 0; $i -lt $segments.Count - 1; $i++) { $obj = $obj.GetType().InvokeMember($segments[$i], [Reflection.BindingFlags]::GetProperty, $null, $obj, @()) }
+      $last = $segments[$segments.Count - 1]
+      if ($a.PSObject.Properties.Name -contains "setValue") {
+        [void]$obj.GetType().InvokeMember($last, [Reflection.BindingFlags]::SetProperty, $null, $obj, @($a.setValue))
+        return @{ ok = $true; detail = @{ ok = $true; action = "set"; path = $a.path } }
+      }
+      $args2 = @(); if ($a.PSObject.Properties.Name -contains "args" -and $a.args) { $args2 = @($a.args) }
+      $ret = $obj.GetType().InvokeMember($last, [Reflection.BindingFlags]::InvokeMethod, $null, $obj, $args2)
+      $retStr = if ($null -ne $ret) { [string]$ret } else { $null }
+      return @{ ok = $true; detail = @{ ok = $true; action = "invoke"; path = $a.path; result = $retStr } }
+    }
+    function Invoke-Window($a) {
+      $procs = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($_.Path -ieq [string]$a.target) })
+      $h = ($procs | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1).MainWindowHandle
+      if (-not $h) { return @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-window"; message = "대상의 최상위 창을 찾지 못했습니다." } } }
+      if ($a.mode -eq "wm_command") { [void][NativeWin2]::SendMessage($h, [NativeWin2]::WM_COMMAND, [IntPtr][int]$a.commandId, [IntPtr]::Zero); return @{ ok = $true; detail = @{ ok = $true; mode = "wm_command"; commandId = [int]$a.commandId } } }
+      elseif ($a.mode -eq "keys") { [void][NativeWin2]::SetForegroundWindow($h); Start-Sleep -Milliseconds 150; Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait([string]$a.keys); return @{ ok = $true; detail = @{ ok = $true; mode = "keys"; keys = [string]$a.keys } } }
+      return @{ ok = $false; limitation = @{ code = "E_PARSE"; collector = "invoke-window"; message = "알 수 없는 mode" } }
+    }
+    switch ([string]$action.kind) {
+      "com" { Invoke-Com $action }
+      "window" { Invoke-Window $action }
+      default { @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "agent"; message = "com/window만 지원합니다." } } }
+    }
+  }).AddArgument($action)
+  $async = $ps.BeginInvoke()
+  if ($async.AsyncWaitHandle.WaitOne($timeoutMs)) {
+    try { $r = $ps.EndInvoke($async) } catch { $r = $null; $err = $_.Exception.InnerException.Message }
+    $ps.Runspace.Close(); $ps.Dispose()
+    if ($err) { return @{ ok = $false; limitation = @{ code = "E_PS_FAILED"; collector = "agent"; message = $err } } }
+    if ($r -and $r.Count -ge 1) { return $r[0] }
+    return @{ ok = $false; limitation = @{ code = "E_PS_FAILED"; collector = "agent"; message = "결과가 없습니다." } }
+  } else {
+    $ps.Stop(); $ps.Dispose()
+    return @{ ok = $false; limitation = @{ code = "E_TIMEOUT"; collector = "agent"; message = "조작이 ${timeoutMs}ms 안에 끝나지 않았습니다. 대상이 응답 대기 중일 수 있습니다(예: Word 보호된 보기 — '편집 사용'을 누르세요)." } }
   }
 }
 
@@ -93,7 +96,7 @@ while ($listener.IsListening) {
       $body = (New-Object IO.StreamReader($req.InputStream, $req.ContentEncoding)).ReadToEnd()
       $parsed = $body | ConvertFrom-Json
       Write-Host "invoke: $($parsed.action.kind) $($parsed.action.path)$($parsed.action.commandId)"
-      $out = Dispatch $parsed.action
+      $out = Invoke-WithTimeout $parsed.action 25000
     } else {
       $resp.StatusCode = 404; $out = @{ error = "알 수 없는 경로" }
     }
