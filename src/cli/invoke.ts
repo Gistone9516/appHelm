@@ -79,6 +79,16 @@ export function buildAction(cmd: string, rest: string[]): InvokeAction | string 
     if (!name && !automationId && !controlType && !action.list) return "invoke-uia에는 --name / --automation-id / --control-type 중 하나(또는 --list)가 필요합니다.";
     return action;
   }
+  if (cmd === "invoke-type") {
+    const text = opt(rest, "--text");
+    if (text === undefined) return "invoke-type에는 --text가 필요합니다.";
+    const action: InvokeAction = { kind: "type", text };
+    const x = opt(rest, "--x"); const y = opt(rest, "--y");
+    if (x !== undefined && y !== undefined) { action.x = Number(x); action.y = Number(y); }
+    if (has(rest, "--no-clear")) action.clear = false;
+    if (has(rest, "--enter")) action.enter = true;
+    return action;
+  }
   if (cmd === "invoke-click") {
     const x = opt(rest, "--x");
     const y = opt(rest, "--y");

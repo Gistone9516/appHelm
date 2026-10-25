@@ -24,6 +24,7 @@ const USAGE = `사용법: apphelm <명령> ...
   invoke-com                 COM 메서드/속성을 실행한다
   invoke-window              실행 중인 창에 명령/키를 보낸다
   invoke-http                발견한 로컬 포트로 요청을 보낸다
+  invoke-type                포커스한 입력칸을 비우고 글자 입력(+Enter) (덧붙음 없음)
   invoke-click               화면 좌표를 클릭한다 (직접 그린 UI용)
   invoke-screenshot          창/영역을 PNG로 뜬다 (OCR·확인용)
   serve                      이 PC를 에이전트로 띄운다 (원격 조작용)
@@ -194,6 +195,7 @@ async function main(): Promise<number> {
     case "invoke-window":
     case "invoke-uia":
     case "invoke-http":
+    case "invoke-type":
     case "invoke-click":
     case "invoke-screenshot":
       return runInvoke(cmd, rest);

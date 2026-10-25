@@ -22,7 +22,7 @@ const PROTOCOL = "2024-11-05";
 const DOC_DIR = join(process.env.LOCALAPPDATA ?? tmpdir(), "apphelm", "docs");
 const WORK_DIR = join(tmpdir(), "apphelm");
 // MCP에 노출하는 조작 종류 (shell 제외: 임의 명령 실행 방지, 주변 브리핑 2026-10-25)
-const ALLOWED_INVOKE = new Set(["com", "window", "uia", "http", "click", "screenshot"]);
+const ALLOWED_INVOKE = new Set(["com", "window", "uia", "http", "type", "click", "screenshot"]);
 
 function log(m: string): void {
   process.stderr.write(`[rea-mcp] ${m}\n`);
@@ -139,7 +139,7 @@ async function toolInvoke(args: Record<string, unknown>): Promise<ReturnType<typ
   const host = args.host ? String(args.host) : undefined;
   const action = args.action as (Record<string, unknown> & { kind?: string; path?: string; name?: string; url?: string }) | undefined;
   if (!action || typeof action !== "object" || !action.kind) return errText("action.kind가 필요합니다.");
-  if (!ALLOWED_INVOKE.has(String(action.kind))) return errText(`이 도구로는 ${action.kind} 조작을 할 수 없습니다. 허용: com, window, uia, http, click, screenshot.`);
+  if (!ALLOWED_INVOKE.has(String(action.kind))) return errText(`이 도구로는 ${action.kind} 조작을 할 수 없습니다. 허용: com, window, uia, http, type, click, screenshot.`);
   log(`invoke ${host ?? "local"} ${action.kind} ${action.path ?? action.name ?? action.url ?? ""}`);
   if (host) {
     const r = await remoteInvoke(host, action as unknown as InvokeAction, Number(args.timeoutSec ?? 90) * 1000);
@@ -242,8 +242,8 @@ const TOOLS = [
         timeoutSec: { type: "number", description: "선택: 제한 시간(초). 큰 컬렉션 훑기(each)는 Word에서 원소당 약 75ms가 걸린다" },
         action: {
           type: "object",
-          description: "com: {kind,progId,attach?,steps:[{path,args?,setValue?,save?,each?:{props,max?}}]} 또는 단계 하나 {kind,progId,path,args?,setValue?}. 경로 문법: 'ActiveDocument.Paragraphs(3).Range' (괄호=인자/번호), '$이름.멤버'(save로 저장한 객체), 상수는 숫자로(com_reference로 값 확인). 단계는 한 번 연결해 차례로 실행되고 첫 실패에서 멈춥니다 / window: {kind,target,mode:wm_command|keys,commandId?,keys?} / uia: {kind,target,name?,automationId?,controlType?,pattern?,value?,list?} / http: {kind,url,method?,body?} / click: {kind,x,y,target?,button?,double?} (직접 그린 항목은 screenshot+OCR로 좌표를 찾아 클릭) / screenshot: {kind,target?,region?,base64?}",
-          properties: { kind: { type: "string", enum: ["com", "window", "uia", "http", "click", "screenshot"] } },
+          description: "com: {kind,progId,attach?,steps:[{path,args?,setValue?,save?,each?:{props,max?}}]} 또는 단계 하나 {kind,progId,path,args?,setValue?}. 경로 문법: 'ActiveDocument.Paragraphs(3).Range' (괄호=인자/번호), '$이름.멤버'(save로 저장한 객체), 상수는 숫자로(com_reference로 값 확인). 단계는 한 번 연결해 차례로 실행되고 첫 실패에서 멈춥니다 / window: {kind,target,mode:wm_command|keys,commandId?,keys?} / uia: {kind,target,name?,automationId?,controlType?,pattern?,value?,list?} / http: {kind,url,method?,body?} / type: {kind,text,x?,y?,clear?(기본true),enter?} (입력칸 비우고 유니코드로 입력, 덧붙음 없음) / click: {kind,x,y,target?,button?,double?} (직접 그린 항목은 screenshot+OCR로 좌표를 찾아 클릭) / screenshot: {kind,target?,region?,base64?}",
+          properties: { kind: { type: "string", enum: ["com", "window", "uia", "http", "type", "click", "screenshot"] } },
           required: ["kind"],
         },
       },

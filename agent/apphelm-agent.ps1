@@ -4,7 +4,7 @@
 # 조작하는 쪽(.53)에서:  $env:APPHELM_TOKEN="<토큰>"; apphelm invoke-com ... --host <이 노드>
 param([string]$Token, [int]$Port = 47817)
 $ErrorActionPreference = "Stop"
-$AgentVersion = "2026-10-25.7-screen"  # 조작하는 쪽이 /health로 버전을 확인한다
+$AgentVersion = "2026-10-25.8-type"  # 조작하는 쪽이 /health로 버전을 확인한다
 if (-not $Token) { Write-Error "토큰이 필요합니다: -Token <값>"; exit 1 }
 
 # COM은 에이전트 메인 스레드(STA)에서 직접 실행한다. 자식 런스페이스에서는 COM 지연바인딩이
@@ -327,6 +327,31 @@ public static class NativeWin2 {
       }
       return @{ ok = $true; detail = @{ pattern = $pattern; name = [string]$cur.Name; automationId = [string]$cur.AutomationId; matchCount = $found.Count } }
     }
+    function Invoke-Type($a) {
+      Add-Type -TypeDefinition @"
+using System; using System.Runtime.InteropServices;
+public static class TyperA {
+  [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Explicit)] public struct UNION { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; }
+  [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public UNION u; }
+  [DllImport("user32.dll", SetLastError=true)] static extern uint SendInput(uint n, INPUT[] p, int cb);
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
+  static INPUT Key(ushort vk, ushort scan, uint flags) { var i = new INPUT(); i.type = 1; i.u.ki.wVk = vk; i.u.ki.wScan = scan; i.u.ki.dwFlags = flags; return i; }
+  static void Send(INPUT[] a) { SendInput((uint)a.Length, a, Marshal.SizeOf(typeof(INPUT))); }
+  public static void TypeText(string s) { foreach (char c in s) { Send(new INPUT[] { Key(0, c, 0x0004), Key(0, c, 0x0006) }); } }
+  public static void Vk(ushort vk, bool ctrl) { var l = new System.Collections.Generic.List<INPUT>(); if (ctrl) l.Add(Key(0x11,0,0)); l.Add(Key(vk,0,0)); l.Add(Key(vk,0,0x0002)); if (ctrl) l.Add(Key(0x11,0,0x0002)); Send(l.ToArray()); }
+  public static void Click(int x, int y) { SetCursorPos(x, y); System.Threading.Thread.Sleep(120); mouse_event(0x0002,0,0,0,IntPtr.Zero); mouse_event(0x0004,0,0,0,IntPtr.Zero); }
+}
+"@
+      $clear = -not ($a.PSObject.Properties.Name -contains "clear" -and -not $a.clear)
+      if (($a.PSObject.Properties.Name -contains "x") -and ($a.PSObject.Properties.Name -contains "y")) { [TyperA]::Click([int]$a.x, [int]$a.y); Start-Sleep -Milliseconds 200 }
+      if ($clear) { [TyperA]::Vk(0x41, $true); Start-Sleep -Milliseconds 60; [TyperA]::Vk(0x2E, $false); Start-Sleep -Milliseconds 60 }
+      [TyperA]::TypeText([string]$a.text); Start-Sleep -Milliseconds 150
+      if ($a.PSObject.Properties.Name -contains "enter" -and $a.enter) { [TyperA]::Vk(0x0D, $false) }
+      return @{ ok = $true; detail = @{ ok = $true; typed = ([string]$a.text).Length; cleared = $clear; sent = [bool]$a.enter } }
+    }
     function Invoke-Click($a) {
       Add-Type -TypeDefinition @"
 using System; using System.Runtime.InteropServices;
@@ -357,6 +382,7 @@ public static class ClkN {
     }
     switch ([string]$action.kind) {
       "window" { Invoke-Window $action }
+      "type" { Invoke-Type $action }
       "uia" { Invoke-Uia $action }
       "click" { Invoke-Click $action }
       "screenshot" { Invoke-Screenshot $action }
@@ -401,7 +427,7 @@ while ($listener.IsListening) {
     if ($req.Headers["x-rea-token"] -ne $Token) {
       $resp.StatusCode = 401; $out = @{ error = "토큰이 올바르지 않습니다." }
     } elseif ($req.Url.AbsolutePath -eq "/health") {
-      $out = @{ ok = $true; node = $env:COMPUTERNAME; version = $AgentVersion; capabilities = @("com", "com-steps", "com-each", "window", "uia", "click", "screenshot", "list", "file") }
+      $out = @{ ok = $true; node = $env:COMPUTERNAME; version = $AgentVersion; capabilities = @("com", "com-steps", "com-each", "window", "uia", "type", "click", "screenshot", "list", "file") }
     } elseif ($req.Url.AbsolutePath -eq "/list") {
       $out = Get-Listing ([string]$req.QueryString["path"])
     } elseif ($req.Url.AbsolutePath -eq "/file") {

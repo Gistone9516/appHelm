@@ -92,6 +92,15 @@ export interface ClickAction {
   double?: boolean;
 }
 
+export interface TypeAction {
+  kind: "type";
+  text: string;
+  x?: number; // 입력 전 포커스할 좌표 (선택)
+  y?: number;
+  clear?: boolean; // 기존 내용 지우기 (기본 true) — 덧붙음 방지
+  enter?: boolean; // 입력 후 Enter (전송)
+}
+
 export interface ScreenshotAction {
   kind: "screenshot";
   target?: string; // 창 exe 경로/이름 또는 제목 (생략=전체 화면)
@@ -99,7 +108,7 @@ export interface ScreenshotAction {
   base64?: boolean; // 원격에서 이미지를 돌려받을 때 (로컬은 항상 파일 경로)
 }
 
-export type InvokeAction = ComAction | WindowAction | HttpAction | ShellAction | UiaAction | ClickAction | ScreenshotAction;
+export type InvokeAction = ComAction | WindowAction | HttpAction | ShellAction | UiaAction | ClickAction | TypeAction | ScreenshotAction;
 
 export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<InvokeResult> {
   switch (action.kind) {
@@ -136,6 +145,14 @@ export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<Invo
       if (action.nth !== undefined) params.nth = action.nth;
       if (action.list) params.list = true;
       const r = await runInUserSession<{ ok: boolean }>("invoke-uia.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 25000, collector: "invoke-uia" });
+      return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
+    }
+    case "type": {
+      const params: Record<string, unknown> = { text: action.text };
+      if (action.x !== undefined && action.y !== undefined) { params.x = action.x; params.y = action.y; }
+      if (action.clear === false) params.clear = false;
+      if (action.enter) params.enter = true;
+      const r = await runInUserSession<{ ok: boolean; typed: number; sent: boolean }>("type.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 20000, collector: "invoke-type" });
       return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
     }
     case "click": {

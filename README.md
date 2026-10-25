@@ -31,6 +31,7 @@ apphelm invoke-com --progid Word.Application --attach --path "Selection.TypeText
 apphelm invoke-window --target "C:\Windows\System32\notepad.exe" --wm 26
 apphelm invoke-uia --target "C:\...\WINWORD.EXE" --name "편집 사용" --pattern Invoke
 # 직접 그린 UI(자동화도 접근성 트리도 없는 앱): 창을 떠서 OCR로 좌표를 찾아 클릭
+apphelm invoke-type --x 2155 --y 801 --text "안녕" --enter   # 입력칸 비우고 입력 후 전송(덧붙음 없음)
 apphelm invoke-screenshot --target "수안"            # 창을 PNG로 (OCR·확인용)
 apphelm invoke-click --x 2156 --y 802               # 화면 좌표 클릭
 
@@ -84,6 +85,18 @@ npm run check:boundaries
 npm test
 npm run e2e
 ```
+
+## AI 조작 지침
+
+AI가 이 도구로 프로그램을 조작하는 방법은 **[docs/AI-GUIDE.md](docs/AI-GUIDE.md)** 에 있다(AI가 읽는 프롬프트라 영어). 요지:
+
+1. **먼저 지도를 만든다.** `map_program` → `get_operation_doc`로 확인하고, 없는 명령은 추측하지 않는다.
+2. **인식은 구조적인 것부터, 픽셀은 마지막** (IF-33). 글자 입력·표준 컨트롤은 UIA로. 스크린샷은 OCR·확인용 이미지일 뿐이다.
+3. **조작 후 반드시 되읽어 확인한다.** COM은 속성 읽기, GUI는 스크린샷.
+4. **앱 유형별 길**: ① COM 있는 앱(Office)은 `com_reference`·`app_commands`로 서명·명령을 찾아 `invoke_operation` com 단계 실행 → ② UIA만 있는 앱은 `uia` 조작 → ③ 자동화도 없는 직접 그린 앱(카카오톡)은 `screenshot`+OCR로 좌표를 찾아 `click`, 입력은 `type`(비우기 기본, `enter`로 전송).
+5. **안전**: 메신저는 본인/테스트 대상에만 전송, 비가역·외부 동작은 확인, 앱 자체 암호 역공학·코드 주입 금지.
+
+실증: Word에 서식 보고서를 단계 묶음으로 작성(F-26), 카카오톡 '나와의 채팅'에 한국어 입력·전송(F-28).
 
 ## 구조
 
