@@ -1,5 +1,6 @@
 // 실행 계층: 발견한 조작 방법을 실제로 실행한다. 사용자 지시로 미리보기 없이 바로 실행한다 (2026-10-25).
 // 화면이 필요한 조작(window)은 사용자 세션에서 돈다 (IF-14).
+import { join } from "node:path";
 import { request } from "node:http";
 import { request as requestHttps } from "node:https";
 import { spawn } from "node:child_process";
@@ -82,7 +83,23 @@ export interface UiaAction {
   list?: boolean; // 실행 대신 일치 요소 목록을 돌려준다 (버튼 이름 확인용)
 }
 
-export type InvokeAction = ComAction | WindowAction | HttpAction | ShellAction | UiaAction;
+export interface ClickAction {
+  kind: "click";
+  x: number;
+  y: number;
+  target?: string; // 클릭 전 포그라운드로 올릴 exe 경로/이름 (선택)
+  button?: "left" | "right";
+  double?: boolean;
+}
+
+export interface ScreenshotAction {
+  kind: "screenshot";
+  target?: string; // 창 exe 경로/이름 또는 제목 (생략=전체 화면)
+  region?: { x: number; y: number; w: number; h: number };
+  base64?: boolean; // 원격에서 이미지를 돌려받을 때 (로컬은 항상 파일 경로)
+}
+
+export type InvokeAction = ComAction | WindowAction | HttpAction | ShellAction | UiaAction | ClickAction | ScreenshotAction;
 
 export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<InvokeResult> {
   switch (action.kind) {
@@ -119,6 +136,23 @@ export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<Invo
       if (action.nth !== undefined) params.nth = action.nth;
       if (action.list) params.list = true;
       const r = await runInUserSession<{ ok: boolean }>("invoke-uia.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 25000, collector: "invoke-uia" });
+      return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
+    }
+    case "click": {
+      const params: Record<string, unknown> = { x: action.x, y: action.y };
+      if (action.target) params.target = action.target;
+      if (action.button) params.button = action.button;
+      if (action.double) params.double = true;
+      const r = await runInUserSession<{ ok: boolean; x: number; y: number }>("click.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 20000, collector: "invoke-click" });
+      return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
+    }
+    case "screenshot": {
+      const out = join(ctx.workDir, `shot-${Date.now()}.png`);
+      const params: Record<string, unknown> = { out };
+      if (action.target) params.target = action.target;
+      if (action.region) params.region = action.region;
+      if (action.base64) params.base64 = true;
+      const r = await runInUserSession<{ ok: boolean; path: string; w: number; h: number; base64?: string }>("screenshot.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 20000, collector: "invoke-screenshot" });
       return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
     }
     case "http":

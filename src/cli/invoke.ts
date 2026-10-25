@@ -79,6 +79,25 @@ export function buildAction(cmd: string, rest: string[]): InvokeAction | string 
     if (!name && !automationId && !controlType && !action.list) return "invoke-uia에는 --name / --automation-id / --control-type 중 하나(또는 --list)가 필요합니다.";
     return action;
   }
+  if (cmd === "invoke-click") {
+    const x = opt(rest, "--x");
+    const y = opt(rest, "--y");
+    if (x === undefined || y === undefined) return "invoke-click에는 --x와 --y가 필요합니다.";
+    const action: InvokeAction = { kind: "click", x: Number(x), y: Number(y) };
+    const target = opt(rest, "--target");
+    if (target) action.target = target;
+    const button = opt(rest, "--button");
+    if (button === "right") action.button = "right";
+    if (has(rest, "--double")) action.double = true;
+    return action;
+  }
+  if (cmd === "invoke-screenshot") {
+    const action: InvokeAction = { kind: "screenshot" };
+    const target = opt(rest, "--target");
+    if (target) action.target = target;
+    if (has(rest, "--base64")) action.base64 = true;
+    return action;
+  }
   if (cmd === "invoke-http") {
     const url = opt(rest, "--url");
     if (!url) return "invoke-http에는 --url이 필요합니다.";

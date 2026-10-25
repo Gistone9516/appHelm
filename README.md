@@ -30,6 +30,9 @@ apphelm map notepad --live
 apphelm invoke-com --progid Word.Application --attach --path "Selection.TypeText" --text "안녕"
 apphelm invoke-window --target "C:\Windows\System32\notepad.exe" --wm 26
 apphelm invoke-uia --target "C:\...\WINWORD.EXE" --name "편집 사용" --pattern Invoke
+# 직접 그린 UI(자동화도 접근성 트리도 없는 앱): 창을 떠서 OCR로 좌표를 찾아 클릭
+apphelm invoke-screenshot --target "수안"            # 창을 PNG로 (OCR·확인용)
+apphelm invoke-click --x 2156 --y 802               # 화면 좌표 클릭
 
 # 여러 단계를 한 번에: 단계 배열을 JSON 파일로 (경로 문법: Paragraphs(3).Range, $저장이름.멤버)
 #   [{"path":"ActiveDocument.Paragraphs(1).Range","save":"p"},{"path":"$p.Style","setValue":-2},{"path":"ActiveDocument.Paragraphs","each":{"props":["Range.Text"]}}]
@@ -62,7 +65,7 @@ claude mcp add apphelm -- cmd /c apphelm-mcp
 #   claude mcp add apphelm -e APPHELM_TOKEN=<토큰> -- cmd /c apphelm-mcp
 ```
 
-등록 후 Claude Code에서 `map_program`, `get_operation_doc`, `invoke_operation`(단계 묶음), `com_reference`(COM 서명·상수 찾기), `app_commands`(Office 명령을 한국어로 찾기), `list_hosts`를 쓸 수 있다. stdout은 JSON-RPC 전용이라 로그는 전부 stderr로 나간다.
+등록 후 Claude Code에서 `map_program`, `get_operation_doc`, `invoke_operation`(단계 묶음), `com_reference`(COM 서명·상수 찾기), `app_commands`(Office 명령을 한국어로 찾기), `invoke_operation`에 click·screenshot 추가, `list_hosts`를 쓸 수 있다. stdout은 JSON-RPC 전용이라 로그는 전부 stderr로 나간다.
 
 네이티브 동작 추적 (5차, Ghidra 필요):
 
@@ -85,7 +88,7 @@ npm run e2e
 ## 구조
 
 ```
-_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-32, 실측 사실 F-1~F-27). 코드와 충돌하면 이 문서가 이긴다
+_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-34, 실측 사실 F-1~F-28). 코드와 충돌하면 이 문서가 이긴다
 bin/apphelm.mjs    실행 진입점 (tsx로 소스를 바로 실행)
 agent/apphelm-agent.ps1    무설치 원격 에이전트 (Windows 기본 PowerShell/.NET만, 대상 PC에서 직접 실행)
 src/invoke/            실행 계층: com·window·uia(화면 요소 클릭/토글/값)·http·shell
@@ -130,6 +133,7 @@ test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 - **런타임마다 UI 정의가 있는 곳이 다르다 (IF-22~IF-24).** .NET은 `InitializeComponent`의 호출·필드 순서로 폼을 추정하고(REA가 IL 오프셋을 안 줘서 추정이므로 신뢰도 0.5, F-13), Delphi는 RCDATA의 이진 폼(TPF0)을 직접 해석하며, Electron은 asar에서 package.json과 fuse만 읽는다. 전체 JS 분석은 느리고 출력이 커서(F-15) 하지 않는다.
 - **화면 수집은 사용자 세션에서 한다 (IF-14, IF-20).** 서비스 세션(Session 0)에서는 창이 보이지 않는다(F-7). 그래서 1회용 예약 작업으로 사용자 세션에서 스크립트를 돌리고, 끝나면 작업을 지운다.
 - **PowerShell과는 파일로 주고받는다 (IF-21).** 스크립트는 ASCII만 쓰고, 입출력은 UTF-8 JSON 파일이다. PowerShell 5.1이 원소 1개 배열을 값으로 풀어 버리므로(F-11), 배열은 TypeScript 경계에서 `asArray()`로 맞춘다.
+- **인식·조작은 구조적인 것부터, 픽셀은 마지막 (IF-33).** Win32 창·표준 컨트롤 → UIA/MSAA 접근성 트리 → OCR(윈도우 내장) → 비전 순서. 글자 입력은 UIA로 하고, 스크린샷은 OCR·확인용 이미지일 뿐 기본 조작 수단이 아니다. 자동화도 접근성 트리도 없는 직접 그린 항목만 `screenshot`+좌표 `click`으로 조작한다 (IF-34). 카카오톡 '나와의 채팅'에 글자를 넣고 전송하는 것을 실증했다(F-28).
 - **COM 실행 로직은 한 벌이다 (IF-29).** 원격 에이전트는 파일 하나로 배포해야 해서 공용 파일을 불러올 수 없다. 그래서 `src/ps/com-core.ps1`을 원본으로 두고 빌드 스크립트가 에이전트와 로컬 스크립트에 그대로 넣는다. 예전에는 같은 로직이 세 벌이라 한쪽만 고쳐질 수 있었다. 테스트가 세 곳이 같은지 확인한다.
 - **수집원은 실패해도 예외를 던지지 않는다 (IF-1).** 일부가 실패해도 나머지 결과로 문서를 만들고, 실패는 "한계"에 적는다.
 - **대상 프로그램을 실행하거나 붙는 수집은 플래그가 있어야 한다 (IF-2).** 판정은 `src/core/policy.ts` 한 곳에서만 한다.
@@ -146,6 +150,7 @@ test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 - 원격 조작 메모: Tailscale은 연결만 준다. 조작은 대상 PC 안의 에이전트가 로컬로 실행한다. SSH·WinRM이 닫혀 있어 에이전트는 대상 PC에서 직접 실행해야 한다(무설치 `agent/apphelm-agent.ps1`). 에이전트는 토큰이 있어야 응답하고 loopback·Tailscale 주소에만 바인딩한다.
   - **배포 시 반드시 `_인터페이스계약.md` §5 체크리스트**를 따른다(실패 원인 F-16~F-22). 핵심: 에이전트는 대상 앱과 같은 권한(일반 권한)으로 실행(관리자면 COM 붙기 실패), 일반 권한 바인딩용 urlacl 1회 등록, COM은 에이전트 메인 스레드에서 실행, 보호된 보기는 UIA로 먼저 해제.
 - Word 검증(2026-10-25, 노트북 Word 16): 자동화 정의 12,162개와 Office 공용 7,161개를 덤프하고, 리본 명령 299개와 예전 컨트롤 1,247개를 실제 Word에서 한국어 이름과 함께 확인했다. 원격 문서에 제목·소제목·굵게·글머리 목록·스타일 입힌 표·기울임꼴을 단계 묶음 3번으로 쓰고 문단별 스타일을 되읽어 확인했다. 리본 정의(XML)는 Word 바이너리에 없어서, 리본 이름은 후보를 앱에 물어 확인하는 방식이다(F-26, F-27).
+- 화면 조작 계층(2026-10-25): `invoke-click`(좌표 클릭), `invoke-screenshot`(창/영역 PNG) 추가. 에이전트 v7(`2026-10-25.7-screen`)도 지원. MCP는 스크린샷을 파일로 저장하고 경로만 돌려준다(컨텍스트 보호). 카카오톡 자체 UI로 실제 입력·전송 검증(F-28). 다음: Win32 창구조 수집기, OCR 연동, 목록 네비게이션 자동화.
 - 설치 간소화(2026-10-25): 일반 실행 파일 분석에서 REA 의존을 없애고 `npm install -g`로 설치되게 정리. 패키지 66KB, 설치 4초, 설치본으로 지도 생성과 MCP 응답을 확인했다.
 - 보류:
   - 대상을 직접 실행하는 수집(`cli-help`, `--allow-launch`로 자동 실행 후 UIA)은 부작용이 있어 따로 결정한다.

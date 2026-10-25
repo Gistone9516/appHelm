@@ -22,7 +22,7 @@ const PROTOCOL = "2024-11-05";
 const DOC_DIR = join(process.env.LOCALAPPDATA ?? tmpdir(), "apphelm", "docs");
 const WORK_DIR = join(tmpdir(), "apphelm");
 // MCP에 노출하는 조작 종류 (shell 제외: 임의 명령 실행 방지, 주변 브리핑 2026-10-25)
-const ALLOWED_INVOKE = new Set(["com", "window", "uia", "http"]);
+const ALLOWED_INVOKE = new Set(["com", "window", "uia", "http", "click", "screenshot"]);
 
 function log(m: string): void {
   process.stderr.write(`[rea-mcp] ${m}\n`);
@@ -121,16 +121,30 @@ function toolGetDoc(args: Record<string, unknown>): ReturnType<typeof text> {
   return text(JSON.stringify(filterByQuery(sec, query), null, 2).slice(0, 60000));
 }
 
+
+/** 스크린샷 결과를 LLM에 그대로 넣지 않는다: base64는 파일로 저장하고 경로만 돌려준다 (AI-12). */
+function summarizeShot(detail: Record<string, unknown>): string {
+  const w = detail.w ?? "?";
+  const h = detail.h ?? "?";
+  if (typeof detail.base64 === "string") {
+    mkdirSync(WORK_DIR, { recursive: true });
+    const file = join(WORK_DIR, `shot-${Date.now()}.png`);
+    writeFileSync(file, Buffer.from(detail.base64, "base64"));
+    return `스크린샷 저장: ${file} (${w}x${h}, ${detail.bytes ?? "?"} bytes). Read 도구로 이미지를 보거나 OCR 하세요.`;
+  }
+  return `스크린샷 저장: ${detail.path ?? "?"} (${w}x${h})`;
+}
+
 async function toolInvoke(args: Record<string, unknown>): Promise<ReturnType<typeof text>> {
   const host = args.host ? String(args.host) : undefined;
   const action = args.action as (Record<string, unknown> & { kind?: string; path?: string; name?: string; url?: string }) | undefined;
   if (!action || typeof action !== "object" || !action.kind) return errText("action.kind가 필요합니다.");
-  if (!ALLOWED_INVOKE.has(String(action.kind))) return errText(`이 도구로는 ${action.kind} 조작을 할 수 없습니다. 허용: com, window, uia, http.`);
+  if (!ALLOWED_INVOKE.has(String(action.kind))) return errText(`이 도구로는 ${action.kind} 조작을 할 수 없습니다. 허용: com, window, uia, http, click, screenshot.`);
   log(`invoke ${host ?? "local"} ${action.kind} ${action.path ?? action.name ?? action.url ?? ""}`);
   if (host) {
     const r = await remoteInvoke(host, action as unknown as InvokeAction, Number(args.timeoutSec ?? 90) * 1000);
     if (!r.ok) return errText(`원격 invoke 실패 (${host}): ${r.error}`);
-    if (r.result.ok) return text(JSON.stringify(r.result.detail, null, 2));
+    if (r.result.ok) return text(String(action.kind) === "screenshot" ? summarizeShot(r.result.detail as Record<string, unknown>) : JSON.stringify(r.result.detail, null, 2));
     // 에이전트는 실패해도 앞 단계 결과(detail)를 함께 보낸다 (IF-27)
     const partial = (r.result as { detail?: unknown }).detail;
     return errText(`${r.result.limitation.code}: ${r.result.limitation.message}${r.result.limitation.hint ? ` (${r.result.limitation.hint})` : ""}${partial ? `
@@ -138,7 +152,8 @@ ${JSON.stringify(partial, null, 2)}` : ""}`);
   }
   mkdirSync(WORK_DIR, { recursive: true });
   const res = await invoke(action as unknown as InvokeAction, { workDir: WORK_DIR, timeoutMs: Number(args.timeoutSec ?? 60) * 1000 });
-  return res.ok ? text(JSON.stringify(res.detail, null, 2)) : errText(`${res.limitation.code}: ${res.limitation.message}${res.limitation.hint ? ` (${res.limitation.hint})` : ""}`);
+  if (!res.ok) return errText(`${res.limitation.code}: ${res.limitation.message}${res.limitation.hint ? ` (${res.limitation.hint})` : ""}`);
+  return text(String(action.kind) === "screenshot" ? summarizeShot(res.detail) : JSON.stringify(res.detail, null, 2));
 }
 
 async function toolTraceNative(args: Record<string, unknown>): Promise<ReturnType<typeof text>> {
@@ -227,8 +242,8 @@ const TOOLS = [
         timeoutSec: { type: "number", description: "선택: 제한 시간(초). 큰 컬렉션 훑기(each)는 Word에서 원소당 약 75ms가 걸린다" },
         action: {
           type: "object",
-          description: "com: {kind,progId,attach?,steps:[{path,args?,setValue?,save?,each?:{props,max?}}]} 또는 단계 하나 {kind,progId,path,args?,setValue?}. 경로 문법: 'ActiveDocument.Paragraphs(3).Range' (괄호=인자/번호), '$이름.멤버'(save로 저장한 객체), 상수는 숫자로(com_reference로 값 확인). 단계는 한 번 연결해 차례로 실행되고 첫 실패에서 멈춥니다 / window: {kind,target,mode:wm_command|keys,commandId?,keys?} / uia: {kind,target,name?,automationId?,controlType?,pattern?,value?,list?} / http: {kind,url,method?,body?}",
-          properties: { kind: { type: "string", enum: ["com", "window", "uia", "http"] } },
+          description: "com: {kind,progId,attach?,steps:[{path,args?,setValue?,save?,each?:{props,max?}}]} 또는 단계 하나 {kind,progId,path,args?,setValue?}. 경로 문법: 'ActiveDocument.Paragraphs(3).Range' (괄호=인자/번호), '$이름.멤버'(save로 저장한 객체), 상수는 숫자로(com_reference로 값 확인). 단계는 한 번 연결해 차례로 실행되고 첫 실패에서 멈춥니다 / window: {kind,target,mode:wm_command|keys,commandId?,keys?} / uia: {kind,target,name?,automationId?,controlType?,pattern?,value?,list?} / http: {kind,url,method?,body?} / click: {kind,x,y,target?,button?,double?} (직접 그린 항목은 screenshot+OCR로 좌표를 찾아 클릭) / screenshot: {kind,target?,region?,base64?}",
+          properties: { kind: { type: "string", enum: ["com", "window", "uia", "http", "click", "screenshot"] } },
           required: ["kind"],
         },
       },

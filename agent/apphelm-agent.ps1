@@ -4,7 +4,7 @@
 # 조작하는 쪽(.53)에서:  $env:APPHELM_TOKEN="<토큰>"; apphelm invoke-com ... --host <이 노드>
 param([string]$Token, [int]$Port = 47817)
 $ErrorActionPreference = "Stop"
-$AgentVersion = "2026-10-25.6-steps"  # 조작하는 쪽이 /health로 버전을 확인한다
+$AgentVersion = "2026-10-25.7-screen"  # 조작하는 쪽이 /health로 버전을 확인한다
 if (-not $Token) { Write-Error "토큰이 필요합니다: -Token <값>"; exit 1 }
 
 # COM은 에이전트 메인 스레드(STA)에서 직접 실행한다. 자식 런스페이스에서는 COM 지연바인딩이
@@ -327,10 +327,40 @@ public static class NativeWin2 {
       }
       return @{ ok = $true; detail = @{ pattern = $pattern; name = [string]$cur.Name; automationId = [string]$cur.AutomationId; matchCount = $found.Count } }
     }
+    function Invoke-Click($a) {
+      Add-Type -TypeDefinition @"
+using System; using System.Runtime.InteropServices;
+public static class ClkN {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
+}
+"@
+      $bx = if ([string]$a.button -eq "right") { 0x0008 } else { 0x0002 }
+      $bu = if ([string]$a.button -eq "right") { 0x0010 } else { 0x0004 }
+      [ClkN]::SetCursorPos([int]$a.x, [int]$a.y); Start-Sleep -Milliseconds 120
+      $times = if ($a.double) { 2 } else { 1 }
+      for ($i = 0; $i -lt $times; $i++) { [ClkN]::mouse_event($bx, 0, 0, 0, [IntPtr]::Zero); [ClkN]::mouse_event($bu, 0, 0, 0, [IntPtr]::Zero); if ($times -gt 1) { Start-Sleep -Milliseconds 80 } }
+      return @{ ok = $true; detail = @{ ok = $true; x = [int]$a.x; y = [int]$a.y } }
+    }
+    function Invoke-Screenshot($a) {
+      Add-Type -AssemblyName System.Drawing, System.Windows.Forms
+      if ($a.region) { $x = [int]$a.region.x; $y = [int]$a.region.y; $w = [int]$a.region.w; $h = [int]$a.region.h }
+      else { $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen; $x = $vs.X; $y = $vs.Y; $w = $vs.Width; $h = $vs.Height }
+      $bmp = New-Object System.Drawing.Bitmap $w, $h
+      $g = [System.Drawing.Graphics]::FromImage($bmp)
+      $g.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size($w, $h)))
+      $ms = New-Object IO.MemoryStream
+      $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+      $g.Dispose(); $bmp.Dispose()
+      $b64 = [Convert]::ToBase64String($ms.ToArray())
+      return @{ ok = $true; detail = @{ ok = $true; w = $w; h = $h; bytes = $ms.Length; base64 = $b64 } }
+    }
     switch ([string]$action.kind) {
       "window" { Invoke-Window $action }
       "uia" { Invoke-Uia $action }
-      default { @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "agent"; message = "window/uia만 이 경로로 실행합니다 (com은 메인 스레드)." } } }
+      "click" { Invoke-Click $action }
+      "screenshot" { Invoke-Screenshot $action }
+      default { @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "agent"; message = "window/uia/click/screenshot만 이 경로로 실행합니다 (com은 메인 스레드)." } } }
     }
   }).AddArgument($action)
   $async = $ps.BeginInvoke()
@@ -371,7 +401,7 @@ while ($listener.IsListening) {
     if ($req.Headers["x-rea-token"] -ne $Token) {
       $resp.StatusCode = 401; $out = @{ error = "토큰이 올바르지 않습니다." }
     } elseif ($req.Url.AbsolutePath -eq "/health") {
-      $out = @{ ok = $true; node = $env:COMPUTERNAME; version = $AgentVersion; capabilities = @("com", "com-steps", "com-each", "window", "uia", "list", "file") }
+      $out = @{ ok = $true; node = $env:COMPUTERNAME; version = $AgentVersion; capabilities = @("com", "com-steps", "com-each", "window", "uia", "click", "screenshot", "list", "file") }
     } elseif ($req.Url.AbsolutePath -eq "/list") {
       $out = Get-Listing ([string]$req.QueryString["path"])
     } elseif ($req.Url.AbsolutePath -eq "/file") {

@@ -24,6 +24,8 @@ const USAGE = `사용법: apphelm <명령> ...
   invoke-com                 COM 메서드/속성을 실행한다
   invoke-window              실행 중인 창에 명령/키를 보낸다
   invoke-http                발견한 로컬 포트로 요청을 보낸다
+  invoke-click               화면 좌표를 클릭한다 (직접 그린 UI용)
+  invoke-screenshot          창/영역을 PNG로 뜬다 (OCR·확인용)
   serve                      이 PC를 에이전트로 띄운다 (원격 조작용)
   ls --host H --path 폴더    원격 노드의 프로그램 폴더 목록 (읽기 전용)
   pull --host H --path 파일  원격 노드의 프로그램 파일을 받는다 (--path 여러 번, --out 폴더)
@@ -192,6 +194,8 @@ async function main(): Promise<number> {
     case "invoke-window":
     case "invoke-uia":
     case "invoke-http":
+    case "invoke-click":
+    case "invoke-screenshot":
       return runInvoke(cmd, rest);
     case "trace":
       return runTrace(rest);
