@@ -30,6 +30,7 @@ export interface RunnerOptions {
   timeoutMs: number;
   version?: string;
   log?: (msg: string) => void;
+  env?: Record<string, string>; // REA 자식 프로세스에 추가로 넣을 환경 변수 (Ghidra 등)
 }
 
 export function createReaRunner(opts: RunnerOptions): ReaRunner {
@@ -43,7 +44,7 @@ export function createReaRunner(opts: RunnerOptions): ReaRunner {
       const line = buildCommandLine(command, args, opts.version);
       opts.log?.(`REA 실행: ${command} ${args.join(" ")}`);
       return new Promise((resolve) => {
-        const child = spawn("cmd.exe", ["/d", "/s", "/c", line], { windowsVerbatimArguments: true, windowsHide: true });
+        const child = spawn("cmd.exe", ["/d", "/s", "/c", line], { windowsVerbatimArguments: true, windowsHide: true, env: opts.env ? { ...process.env, ...opts.env } : process.env });
         const ws = createWriteStream(outFile);
         child.stdout.pipe(ws);
         let stderr = "";

@@ -13,6 +13,7 @@ import { ALL_COLLECTORS } from "../cli/collectors.ts";
 import { invoke, type InvokeAction } from "../invoke/index.ts";
 import { remoteInvoke, remoteMap } from "../transport/client.ts";
 import { tailnetNodes } from "../transport/host.ts";
+import { runNativeTrace } from "../trace/index.ts";
 import { NO_REPLY, serveStdio } from "./jsonrpc.ts";
 
 const PROTOCOL = "2024-11-05";
@@ -134,6 +135,15 @@ async function toolInvoke(args: Record<string, unknown>): Promise<ReturnType<typ
   return res.ok ? text(JSON.stringify(res.detail, null, 2)) : errText(`${res.limitation.code}: ${res.limitation.message}${res.limitation.hint ? ` (${res.limitation.hint})` : ""}`);
 }
 
+async function toolTraceNative(args: Record<string, unknown>): Promise<ReturnType<typeof text>> {
+  const target = String(args.target ?? "");
+  const query = args.query ? String(args.query) : undefined;
+  if (!target) return errText("target이 필요합니다.");
+  const r = await runNativeTrace(target, { query, log });
+  if (!r.ok) return errText(`${r.limitation.code}: ${r.limitation.message}${r.limitation.hint ? ` (${r.limitation.hint})` : ""}`);
+  return text(JSON.stringify(r.trace, null, 2).slice(0, 60000));
+}
+
 function toolListHosts(): ReturnType<typeof text> {
   const nodes = tailnetNodes();
   const rows = nodes.map((n) => `${n.ip}  ${n.name}  ${n.os}  ${n.online ? "online" : "offline"}`);
@@ -190,6 +200,18 @@ const TOOLS = [
       required: ["action"],
     },
   },
+  {
+    name: "trace_native",
+    description: "네이티브 PE(exe/dll)를 Ghidra로 정적 분석해 이미지 개요(세그먼트·함수 수·문자열 수)와, query가 있으면 이름이 맞는 함수 목록을 돌려줍니다. 느립니다(콜드 스타트 수백 초). Ghidra+JDK가 설치돼 있어야 하고 .NET 등 관리 코드는 지원 안 합니다. 로컬 전용.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", description: "네이티브 exe/dll 경로" },
+        query: { type: "string", description: "선택: 찾을 함수 이름(부분/정규)" },
+      },
+      required: ["target"],
+    },
+  },
 ];
 
 export function startMcpServer(): void {
@@ -217,6 +239,7 @@ export function startMcpServer(): void {
           case "map_program": return await toolMapProgram(a);
           case "get_operation_doc": return toolGetDoc(a);
           case "invoke_operation": return await toolInvoke(a);
+          case "trace_native": return await toolTraceNative(a);
           default: return errText(`알 수 없는 도구: ${name}`);
         }
       }

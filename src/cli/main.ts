@@ -12,6 +12,7 @@ import { renderMarkdown } from "../render/markdown.ts";
 import { ALL_COLLECTORS } from "./collectors.ts";
 import { runInvoke } from "./invoke.ts";
 import { runServe } from "./serve.ts";
+import { runNativeTrace } from "../trace/index.ts";
 import { remoteMap } from "../transport/client.ts";
 
 const USAGE = `사용법: rea-adapter <명령> ...
@@ -141,6 +142,25 @@ export async function runMap(rest: string[]): Promise<number> {
   return 0;
 }
 
+export async function runTrace(rest: string[]): Promise<number> {
+  const target = rest.find((v) => !v.startsWith("--"));
+  if (!target) {
+    process.stderr.write("사용법: rea-adapter trace <exe 경로> [--query <함수이름>]\n");
+    return 2;
+  }
+  const qi = rest.indexOf("--query");
+  const query = qi >= 0 ? rest[qi + 1] : undefined;
+  const log = (m: string) => process.stderr.write(`· ${m}\n`);
+  process.stderr.write("Ghidra 네이티브 분석은 콜드 스타트가 수백 초 걸립니다...\n");
+  const r = await runNativeTrace(target, { query, log });
+  if (!r.ok) {
+    process.stderr.write(`오류: ${r.limitation.message}${r.limitation.hint ? ` (${r.limitation.hint})` : ""}\n`);
+    return 1;
+  }
+  process.stdout.write(JSON.stringify(r.trace, null, 2) + "\n");
+  return 0;
+}
+
 function writeDoc(result: OperationDoc, out: string, log: (m: string) => void): void {
   const outDir = resolve(out);
   mkdirSync(outDir, { recursive: true });
@@ -165,6 +185,8 @@ async function main(): Promise<number> {
     case "invoke-uia":
     case "invoke-http":
       return runInvoke(cmd, rest);
+    case "trace":
+      return runTrace(rest);
     case "serve":
       return runServe(rest);
     default:
