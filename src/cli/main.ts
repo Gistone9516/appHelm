@@ -12,6 +12,7 @@ import { renderMarkdown } from "../render/markdown.ts";
 import { ALL_COLLECTORS } from "./collectors.ts";
 import { runInvoke } from "./invoke.ts";
 import { runLs, runPull, runRef, runTypelib } from "./libs.ts";
+import { runCommands } from "./commands.ts";
 import { runServe } from "./serve.ts";
 import { runNativeTrace } from "../trace/index.ts";
 import { remoteMap } from "../transport/client.ts";
@@ -28,6 +29,7 @@ const USAGE = `사용법: apphelm <명령> ...
   pull --host H --path 파일  원격 노드의 프로그램 파일을 받는다 (--path 여러 번, --out 폴더)
   typelib <파일>             타입 라이브러리 전체를 덤프한다 (.olb/.tlb/.dll/.exe)
   ref <라이브러리> <찾을 말>  덤프한 라이브러리에서 형식·멤버·상수를 찾는다
+  commands build|find        Office 계열 앱의 명령 목록(리본 idMso + 예전 컨트롤) 만들기·찾기
 
 map 옵션:
   --out <폴더>       결과를 저장할 폴더 (기본: ./apphelm-out)
@@ -203,6 +205,8 @@ async function main(): Promise<number> {
       return runTypelib(rest);
     case "ref":
       return runRef(rest);
+    case "commands":
+      return runCommands(rest);
     default:
       process.stderr.write(USAGE + "\n");
       return cmd ? 2 : 0;

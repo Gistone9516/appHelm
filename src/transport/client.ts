@@ -64,11 +64,11 @@ export async function remoteMap(
   return { ok: true, doc: res.data };
 }
 
-export async function remoteInvoke(host: string, action: InvokeAction): Promise<{ ok: true; result: InvokeResult } | { ok: false; error: string }> {
+export async function remoteInvoke(host: string, action: InvokeAction, timeoutMs = 90000): Promise<{ ok: true; result: InvokeResult } | { ok: false; error: string }> {
   const r = resolveHost(host);
   if ("error" in r) return { ok: false, error: r.error };
   if (!token()) return { ok: false, error: "APPHELM_TOKEN 환경 변수가 필요합니다 (에이전트와 같은 토큰)." };
-  const res = await send<InvokeResult>("POST", r.ip, DEFAULT_PORT, "/invoke", { action }, 90000);
+  const res = await send<InvokeResult>("POST", r.ip, DEFAULT_PORT, "/invoke", { action }, timeoutMs);
   return res.ok ? { ok: true, result: res.data } : res;
 }
 

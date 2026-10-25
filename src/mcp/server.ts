@@ -14,6 +14,7 @@ import { invoke, type InvokeAction } from "../invoke/index.ts";
 import { remoteInvoke, remoteMap } from "../transport/client.ts";
 import { tailnetNodes } from "../transport/host.ts";
 import { runNativeTrace } from "../trace/index.ts";
+import { loadCatalog, searchCatalog } from "../catalog/index.ts";
 import { dumpTypelib, listTypelibs, loadTypelib, searchTypelib } from "../typelib/index.ts";
 import { NO_REPLY, serveStdio } from "./jsonrpc.ts";
 
@@ -127,7 +128,7 @@ async function toolInvoke(args: Record<string, unknown>): Promise<ReturnType<typ
   if (!ALLOWED_INVOKE.has(String(action.kind))) return errText(`이 도구로는 ${action.kind} 조작을 할 수 없습니다. 허용: com, window, uia, http.`);
   log(`invoke ${host ?? "local"} ${action.kind} ${action.path ?? action.name ?? action.url ?? ""}`);
   if (host) {
-    const r = await remoteInvoke(host, action as unknown as InvokeAction);
+    const r = await remoteInvoke(host, action as unknown as InvokeAction, Number(args.timeoutSec ?? 90) * 1000);
     if (!r.ok) return errText(`원격 invoke 실패 (${host}): ${r.error}`);
     if (r.result.ok) return text(JSON.stringify(r.result.detail, null, 2));
     // 에이전트는 실패해도 앞 단계 결과(detail)를 함께 보낸다 (IF-27)
@@ -136,7 +137,7 @@ async function toolInvoke(args: Record<string, unknown>): Promise<ReturnType<typ
 ${JSON.stringify(partial, null, 2)}` : ""}`);
   }
   mkdirSync(WORK_DIR, { recursive: true });
-  const res = await invoke(action as unknown as InvokeAction, { workDir: WORK_DIR, timeoutMs: 60000 });
+  const res = await invoke(action as unknown as InvokeAction, { workDir: WORK_DIR, timeoutMs: Number(args.timeoutSec ?? 60) * 1000 });
   return res.ok ? text(JSON.stringify(res.detail, null, 2)) : errText(`${res.limitation.code}: ${res.limitation.message}${res.limitation.hint ? ` (${res.limitation.hint})` : ""}`);
 }
 
@@ -165,6 +166,16 @@ async function toolComReference(args: Record<string, unknown>): Promise<ReturnTy
   const r = searchTypelib(lib, query, Number(args.limit ?? 150));
   return text(`${r.lines.join("\n")}
 (${r.lines.length}/${r.total}줄${r.total > r.lines.length ? ", limit를 올리거나 더 좁게 찾으세요" : ""})`);
+}
+
+function toolAppCommands(args: Record<string, unknown>): ReturnType<typeof text> {
+  const progId = String(args.progId ?? "");
+  const query = String(args.query ?? "").trim();
+  const c = progId ? loadCatalog(progId) : null;
+  if (!c) return errText(`명령 목록이 없습니다: ${progId}. 'apphelm commands build --progid ${progId || "<ProgID>"} [--host H] --scan <exe/dll>'로 먼저 만드세요.`);
+  if (!query) return text(`${progId}: 명령 ${c.entries.length}개 (리본 ${c.entries.filter((e) => e.kind === "mso").length}, 컨트롤 ${c.entries.filter((e) => e.kind === "control").length}). query에 한국어/영어 이름 일부를 주세요.`);
+  const r = searchCatalog(c, query, Number(args.limit ?? 60));
+  return text(`이름\t종류\t실행 단계(invoke_operation com steps의 path)\n${r.lines.join("\n")}\n(${r.lines.length}/${r.total})`);
 }
 
 function toolListHosts(): ReturnType<typeof text> {
@@ -213,6 +224,7 @@ const TOOLS = [
       type: "object",
       properties: {
         host: { type: "string", description: "원격 노드 (생략=로컬)" },
+        timeoutSec: { type: "number", description: "선택: 제한 시간(초). 큰 컬렉션 훑기(each)는 Word에서 원소당 약 75ms가 걸린다" },
         action: {
           type: "object",
           description: "com: {kind,progId,attach?,steps:[{path,args?,setValue?,save?,each?:{props,max?}}]} 또는 단계 하나 {kind,progId,path,args?,setValue?}. 경로 문법: 'ActiveDocument.Paragraphs(3).Range' (괄호=인자/번호), '$이름.멤버'(save로 저장한 객체), 상수는 숫자로(com_reference로 값 확인). 단계는 한 번 연결해 차례로 실행되고 첫 실패에서 멈춥니다 / window: {kind,target,mode:wm_command|keys,commandId?,keys?} / uia: {kind,target,name?,automationId?,controlType?,pattern?,value?,list?} / http: {kind,url,method?,body?}",
@@ -234,6 +246,15 @@ const TOOLS = [
         file: { type: "string", description: "선택: 아직 없으면 이 .olb/.tlb/.dll을 덤프" },
         limit: { type: "number" },
       },
+    },
+  },
+  {
+    name: "app_commands",
+    description: "Office 계열 앱(Word 등)에서 실제로 확인된 명령(리본 idMso와 예전 메뉴 컨트롤)을 한국어/영어 이름으로 찾고 실행 단계를 돌려줍니다. 예: query '표 삽입', '굵게', 'Heading'. 돌려받은 path를 invoke_operation의 com steps에 그대로 넣으면 그 명령을 실행합니다(대화상자가 뜰 수 있음). 서식·텍스트 같은 세밀한 조작은 com_reference의 개체 모델을 쓰세요.",
+    inputSchema: {
+      type: "object",
+      properties: { progId: { type: "string", description: "예: Word.Application" }, query: { type: "string" }, limit: { type: "number" } },
+      required: ["progId"],
     },
   },
   {
@@ -275,6 +296,7 @@ export function startMcpServer(): void {
           case "map_program": return await toolMapProgram(a);
           case "get_operation_doc": return toolGetDoc(a);
           case "com_reference": return await toolComReference(a);
+          case "app_commands": return toolAppCommands(a);
           case "invoke_operation": return await toolInvoke(a);
           case "trace_native": return await toolTraceNative(a);
           default: return errText(`알 수 없는 도구: ${name}`);

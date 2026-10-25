@@ -100,7 +100,8 @@ export async function runInvoke(cmd: string, rest: string[]): Promise<number> {
   }
   const host = opt(rest, "--host");
   if (host) {
-    const r = await remoteInvoke(host, action);
+    // 큰 컬렉션 훑기(each)는 90초를 넘을 수 있다: --timeout <초>
+    const r = await remoteInvoke(host, action, Number(opt(rest, "--timeout") ?? 90) * 1000);
     if (!r.ok) {
       process.stderr.write(`원격 오류: ${r.error}\n`);
       return 1;
@@ -110,7 +111,7 @@ export async function runInvoke(cmd: string, rest: string[]): Promise<number> {
   }
   const workDir = join(tmpdir(), "apphelm");
   mkdirSync(workDir, { recursive: true });
-  const result = await invoke(action, { workDir, timeoutMs: 60000 });
+  const result = await invoke(action, { workDir, timeoutMs: Number(opt(rest, "--timeout") ?? 60) * 1000 });
   process.stdout.write(JSON.stringify(result, null, 2) + "\n");
   if (!result.ok) {
     process.stderr.write(`실행 실패: ${result.limitation.message}${result.limitation.hint ? ` (${result.limitation.hint})` : ""}\n`);

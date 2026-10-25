@@ -68,7 +68,9 @@ export async function runTypelib(rest: string[]): Promise<number> {
 }
 
 export async function runRef(rest: string[]): Promise<number> {
-  const [lib, ...q] = rest.filter((a) => !a.startsWith("--"));
+  // 옵션 값(--limit 5의 5)이 검색어에 섞이지 않게 옵션과 값을 함께 뺀다
+  const words = rest.filter((a, i) => !a.startsWith("--") && rest[i - 1] !== "--limit");
+  const [lib, ...q] = words;
   const dump = lib ? loadTypelib(lib) : null;
   if (!dump || q.length === 0) {
     process.stderr.write(`ref <라이브러리> <찾을 말>\n저장된 라이브러리: ${listTypelibs().join(", ") || "(없음)"}\n`);

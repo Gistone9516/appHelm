@@ -16,13 +16,14 @@ const ALLOWED: Record<string, string[]> = {
   invoke: ["core", "ps", "session"],
   trace: ["core", "rea-bridge"],
   typelib: ["core", "ps"],
-  mcp: ["core", "transport", "invoke", "trace", "typelib", "probe", "merge", "render", "rea-bridge", "collectors", "cli"],
+  catalog: ["core"],
+  mcp: ["core", "transport", "invoke", "trace", "typelib", "catalog", "probe", "merge", "render", "rea-bridge", "collectors", "cli"],
   collectors: ["core", "pe", "decoders", "rea-bridge", "ps", "session"],
   server: ["core", "pe", "decoders", "rea-bridge", "ps", "session", "probe", "merge", "invoke", "collectors"],
   probe: ["core", "pe"],
   merge: ["core"],
   render: ["core"],
-  cli: ["core", "pe", "decoders", "rea-bridge", "ps", "session", "transport", "invoke", "trace", "typelib", "server", "collectors", "probe", "merge", "render"],
+  cli: ["core", "pe", "decoders", "rea-bridge", "ps", "session", "transport", "invoke", "trace", "typelib", "catalog", "server", "collectors", "probe", "merge", "render"],
 };
 
 function walk(dir: string): string[] {

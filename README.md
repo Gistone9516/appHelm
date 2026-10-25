@@ -39,6 +39,10 @@ apphelm invoke-com --progid Word.Application --attach --steps steps.json
 apphelm typelib "C:\경로\MSWORD.OLB"
 apphelm ref Word Document.SaveAs2
 
+# Office 계열 앱의 명령 목록 (리본 idMso + 예전 메뉴 컨트롤, 실행 중인 앱이 확인한 것만)
+apphelm commands build --progid Word.Application --host book --scan WWLIB.DLL
+apphelm commands find Word.Application 목차
+
 # 원격: 대상 PC에서 에이전트를 띄우고(아래), 조작하는 쪽에서 --host 로 지정
 #  - 대상이 Node가 있으면:   apphelm serve
 #  - 대상이 무설치면:         powershell -ExecutionPolicy Bypass -File agent\apphelm-agent.ps1 -Token <토큰>
@@ -58,7 +62,7 @@ claude mcp add apphelm -- cmd /c apphelm-mcp
 #   claude mcp add apphelm -e APPHELM_TOKEN=<토큰> -- cmd /c apphelm-mcp
 ```
 
-등록 후 Claude Code에서 `map_program`, `get_operation_doc`, `invoke_operation`(단계 묶음), `com_reference`(COM 서명·상수 찾기), `list_hosts`를 쓸 수 있다. stdout은 JSON-RPC 전용이라 로그는 전부 stderr로 나간다.
+등록 후 Claude Code에서 `map_program`, `get_operation_doc`, `invoke_operation`(단계 묶음), `com_reference`(COM 서명·상수 찾기), `app_commands`(Office 명령을 한국어로 찾기), `list_hosts`를 쓸 수 있다. stdout은 JSON-RPC 전용이라 로그는 전부 stderr로 나간다.
 
 네이티브 동작 추적 (5차, Ghidra 필요):
 
@@ -81,7 +85,7 @@ npm run e2e
 ## 구조
 
 ```
-_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-31, 실측 사실 F-1~F-25). 코드와 충돌하면 이 문서가 이긴다
+_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-32, 실측 사실 F-1~F-27). 코드와 충돌하면 이 문서가 이긴다
 bin/apphelm.mjs    실행 진입점 (tsx로 소스를 바로 실행)
 agent/apphelm-agent.ps1    무설치 원격 에이전트 (Windows 기본 PowerShell/.NET만, 대상 PC에서 직접 실행)
 src/invoke/            실행 계층: com·window·uia(화면 요소 클릭/토글/값)·http·shell
@@ -94,6 +98,7 @@ src/decoders/          리소스 바이트 해석: 메뉴·단축키·문자열�
 src/rea-bridge/        REA CLI 실행(버전 6.7.0 고정, .NET·Electron·추적에만)
 src/ps/                PowerShell 5.1 스크립트 실행기와 스크립트(scripts/*.ps1, ASCII 전용). com-core.ps1은 COM 실행 로직 원본
 src/typelib/           타입 라이브러리 전체 덤프와 찾아보기 (서명·기본값·열거형 상수)
+src/catalog/           Office 계열 명령 목록 (리본 idMso는 GetLabelMso로 확인한 것만)
 scripts/build-ps.ts    com-core.ps1을 에이전트와 invoke-com.ps1에 넣는다 (npm run build:ps)
 src/session/           화면이 필요한 스크립트를 사용자 세션에서 실행 (서비스 세션이면 1회용 예약 작업)
 src/collectors/        수집원
@@ -140,6 +145,7 @@ test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 - 5차 완료(옵트인): Ghidra 네이티브 동작 추적 티어. `apphelm trace <exe> [--query 함수]`와 MCP `trace_native`. Ghidra 12.1.4 + JDK 21(`C:\tools`) 설치, 메모장을 REA Ghidra 공급자로 분석(세그먼트·함수 794·문자열 557, 콜드 스타트 ~180초) 검증. 일반 `map`에는 넣지 않는다(느리고 실험적, 네이티브 PE만).
 - 원격 조작 메모: Tailscale은 연결만 준다. 조작은 대상 PC 안의 에이전트가 로컬로 실행한다. SSH·WinRM이 닫혀 있어 에이전트는 대상 PC에서 직접 실행해야 한다(무설치 `agent/apphelm-agent.ps1`). 에이전트는 토큰이 있어야 응답하고 loopback·Tailscale 주소에만 바인딩한다.
   - **배포 시 반드시 `_인터페이스계약.md` §5 체크리스트**를 따른다(실패 원인 F-16~F-22). 핵심: 에이전트는 대상 앱과 같은 권한(일반 권한)으로 실행(관리자면 COM 붙기 실패), 일반 권한 바인딩용 urlacl 1회 등록, COM은 에이전트 메인 스레드에서 실행, 보호된 보기는 UIA로 먼저 해제.
+- Word 검증(2026-10-25, 노트북 Word 16): 자동화 정의 12,162개와 Office 공용 7,161개를 덤프하고, 리본 명령 299개와 예전 컨트롤 1,247개를 실제 Word에서 한국어 이름과 함께 확인했다. 원격 문서에 제목·소제목·굵게·글머리 목록·스타일 입힌 표·기울임꼴을 단계 묶음 3번으로 쓰고 문단별 스타일을 되읽어 확인했다. 리본 정의(XML)는 Word 바이너리에 없어서, 리본 이름은 후보를 앱에 물어 확인하는 방식이다(F-26, F-27).
 - 설치 간소화(2026-10-25): 일반 실행 파일 분석에서 REA 의존을 없애고 `npm install -g`로 설치되게 정리. 패키지 66KB, 설치 4초, 설치본으로 지도 생성과 MCP 응답을 확인했다.
 - 보류:
   - 대상을 직접 실행하는 수집(`cli-help`, `--allow-launch`로 자동 실행 후 UIA)은 부작용이 있어 따로 결정한다.
