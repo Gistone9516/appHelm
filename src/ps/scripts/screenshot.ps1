@@ -19,13 +19,14 @@ public static class ShotNative {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+  // PowerShell passes $null to a C# string parameter as "", so an empty title means no title filter
   public static IntPtr Find(uint pid, string title) {
     IntPtr found = IntPtr.Zero;
     EnumWindows((h, l) => {
       uint p; GetWindowThreadProcessId(h, out p);
       if (!IsWindowVisible(h)) return true;
       if (pid != 0 && p != pid) return true;
-      if (title != null) { var s = new StringBuilder(256); GetWindowText(h, s, 256); if (s.ToString() != title) return true; }
+      if (!String.IsNullOrEmpty(title)) { var s = new StringBuilder(256); GetWindowText(h, s, 256); if (s.ToString() != title) return true; }
       RECT r; GetWindowRect(h, out r); if ((r.R - r.L) < 100 || (r.B - r.T) < 100) return true;
       found = h; return false;
     }, IntPtr.Zero);
@@ -50,14 +51,14 @@ try {
       foreach ($pr in @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -ieq $base })) { $hwnd = [ShotNative]::Find([uint32]$pr.Id, $null); if ($hwnd -ne [IntPtr]::Zero) { break } }
     }
     if ($hwnd -eq [IntPtr]::Zero) { $hwnd = [ShotNative]::Find(0, $t) }  # treat target as a window title
-    if ($hwnd -eq [IntPtr]::Zero) { throw "창을 찾지 못했습니다: $t" }
+    if ($hwnd -eq [IntPtr]::Zero) { throw "window not found: $t" }
     $r = [ShotNative]::Rect($hwnd); $x = $r.L; $y = $r.T; $w = $r.R - $r.L; $h = $r.B - $r.T
   } else {
     $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen 2>$null
     if (-not $vs) { Add-Type -AssemblyName System.Windows.Forms; $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen }
     $x = $vs.X; $y = $vs.Y; $w = $vs.Width; $h = $vs.Height
   }
-  if ($w -le 0 -or $h -le 0) { throw "영역 크기가 올바르지 않습니다: ${w}x${h}" }
+  if ($w -le 0 -or $h -le 0) { throw "invalid region size: ${w}x${h}" }
   $bmp = New-Object System.Drawing.Bitmap $w, $h
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.CopyFromScreen($x, $y, 0, 0, (New-Object System.Drawing.Size($w, $h)))
