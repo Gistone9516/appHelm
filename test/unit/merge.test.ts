@@ -112,3 +112,13 @@ test("IF-13: Markdown 요약은 4KB 이하", () => {
   assert.ok(Buffer.byteLength(md, "utf8") <= MAX_MD_BYTES, `크기 ${Buffer.byteLength(md, "utf8")}`);
   assert.match(md, /500개 중 \d+개 표시/);
 });
+
+test("IF-35: 툴킷마다 근거와 먼저 쓸 창구, 켜는 법을 적고 4KB를 지킨다", () => {
+  const withTk: Target = { ...target, toolkits: [{ id: "cef", code: "E2", name: "CEF", evidence: ["하위 폴더에 bin\\cef\\cef.win64\\libcef.dll"] }] };
+  const evidence: Evidence[] = [];
+  for (let i = 0; i < 500; i++) evidence.push(ev("menu-item", { menuName: 1, path: ["메뉴", `작업 ${i}`], text: `작업 ${i}`, commandId: i + 1 }));
+  const md = renderMarkdown(merge(withTk, evidence, [], { collectorsRun: [] }), "C:\out\app.ops.json");
+  assert.ok(md.includes("- 툴킷: CEF (E2), 근거 하위 폴더에 bin"), md);
+  assert.match(md, /먼저 쓸 창구: CDP.*켜는 법: `--remote-debugging-port/);
+  assert.ok(Buffer.byteLength(md, "utf8") <= MAX_MD_BYTES);
+});

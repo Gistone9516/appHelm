@@ -114,9 +114,14 @@ AppHelm은 배포 파일에서 툴킷을 판별할 수 있으므로 **"이 앱�
 
 조사에서 나온 것 중 지금 방침(새 기획 없이 기반 다지기)에 맞는 순서다.
 
-1. **툴킷 판별기 정리.** PE 임포트와 동봉 파일로 계열 코드(A1~G5)를 붙이고, 1-2의 스위치 안내와 2장의 1순위, 폴백 창구를 지도에 함께 적는다. 모든 계열에 공통으로 쓰이고 이미 있는 probe 위에 얹을 수 있다. 실측(7장)에서 Qt6, Flutter, CEF 앱이 모두 `native`로 판별됐다. exe 옆의 `Qt6Core.dll`, `flutter_windows.dll`, `libcef.dll`을 보지 않기 때문이다. CEF 앱은 창을 helper 프로세스(`steamwebhelper.exe`)가 갖고 있어서, 실행 중 화면을 읽을 때도 대상 exe 하나가 아니라 자식 프로세스까지 봐야 한다.
+1. **툴킷 판별기 정리. (1차 반영 2026-10-26)** Qt5/6, Qt WebEngine, Flutter, CEF, WebView2, Java, GTK, Unity를 `src/core/toolkits.ts` 표 하나로 판별하고, 지도에 먼저 쓸 창구와 켜는 법을 적는다(IF-35). 실행 중 화면 읽기는 대상의 자손 프로세스까지 보고, 최소화된 창은 알린다(IF-20). 원래 계획: PE 임포트와 동봉 파일로 계열 코드(A1~G5)를 붙이고, 1-2의 스위치 안내와 2장의 1순위, 폴백 창구를 지도에 함께 적는다. 모든 계열에 공통으로 쓰이고 이미 있는 probe 위에 얹을 수 있다. 실측(7장)에서 Qt6, Flutter, CEF 앱이 모두 `native`로 판별됐다. exe 옆의 `Qt6Core.dll`, `flutter_windows.dll`, `libcef.dll`을 보지 않기 때문이다. CEF 앱은 창을 helper 프로세스(`steamwebhelper.exe`)가 갖고 있어서, 실행 중 화면을 읽을 때도 대상 exe 하나가 아니라 자식 프로세스까지 봐야 한다.
 2. **G5 사전 판정.** 4장의 신호 중 정적으로 읽히는 것(display affinity, 무결성 수준, 서비스와 DLL)을 지도에 넣는다.
 3. **정적 결과와 UIA 이름 합치기.** Delphi 설치기처럼 캡션이 비는 경우를 실행 중 UIA 이름으로## 7. 이 PC 실측 (2026-10-26)
+4. **Electron 퓨즈를 요약 문서에도 표시.** 지금은 `.ops.json`에만 있고 `.ops.md`에는 안 나온다.
+5. **`--out` 경로에 `%TEMP%`처럼 풀리지 않은 환경변수가 오면 거부하거나 풀어서 쓴다.** PowerShell에서 `%TEMP%`는 풀리지 않아 작업 폴더 안에 `%TEMP%`라는 폴더가 생겼다. 조사 중 보고된 종료 코드 255는 Bash와 PowerShell 양쪽에서 재현되지 않았다.
+6. 그 다음 계열 확장 후보는 BAML과 AXAML(ILSpy 재사용 검토), 출하 문자열 기반 OCR 사전(IF-33 OCR 단계와 연결)이다.
+
+## 7. 이 PC 실측 (2026-10-26)
 
 이 PC에서 툴킷 표시 파일로 설치 앱을 훑었다. Java, GTK, Unity, FireMonkey 앱은 없었다. 찾은 앱의 창을 띄운 상태에서 `apphelm map --live`로 읽었다. 스크린리더는 켜지 않았다.
 
@@ -129,9 +134,24 @@ AppHelm은 배포 파일에서 툴킷을 판별할 수 있으므로 **"이 앱�
 
 - **Qt6는 스위치 없이도 UIA가 켜져 있다.** 다만 컨트롤 종류만 나오고 이름이 비어 있어서, 정적 리소스로 라벨을 채우는 일이 필요하다.
 - **Flutter는 스크린리더가 없으면 semantics 트리를 내보내지 않았다.** 조사 때 확인하지 못한 항목이 측정으로 확인됐다.
-- **Chromium 계열(Electron, CEF)도 보조기술이 없으면 접근성이 꺼져 있었다.** 조사 내용과 같다. `--force-renderer-accessibility`로 다시 띄우면 달라지는지는 사용자의 Discord와 Steam을 재시작해야 해서 재지 않았다.
+- **Chromium 계열(Electron, CEF)은 요소가 적게 나왔지만 원인은 창 최소화였다** (8장).
 
-## 8. 남은 실측 후보
+## 8. 개선 뒤 다시 잰 결과 (2026-10-26)
+
+| 앱 | 판별 | 화면 읽기 |
+|---|---|---|
+| Free Download Manager | Qt6 (F1), `import qt6core.dll` | 요소 8개 그대로 (이름이 비는 문제는 남음) |
+| RustDesk | Flutter (F4), `import flutter_windows.dll` | 1개 그대로 |
+| Steam | CEF (E2), 하위 폴더의 `libcef.dll` | 창 0개에서 2개로 (자식 프로세스 창을 봄) |
+| Discord | Electron | 최소화 상태를 알림 |
+
+- 요소 수를 가른 것은 접근성 스위치가 아니라 **창의 최소화 여부**였다. Discord는 최소화 상태에서 7개, 복원하면 356개였다.
+- 스크린리더가 하듯 MSAA 객체를 요청해도(`AccessibleObjectFromWindow`) 수는 변하지 않았다. Chromium 계열은 이미 켜져 있었고, Flutter는 이 요청으로 켜지지 않는다.
+
+## 9. 남은 실측 후보
+
+- Flutter semantics를 켜는 공식 조건. 시스템 스크린리더 플래그(`SPI_SETSCREENREADER`)는 다른 앱에도 영향을 주는 전역 설정이라 사용자 동의 없이 바꾸지 않는다.
+- Qt6 Quick 앱의 빈 이름을 정적 리소스(qrc 안의 .qml)로 채울 수 있는지.
 
 - Flutter와 Chromium 계열에서 접근성을 켜는 공식 방법(Chromium은 `--force-renderer-accessibility`, Flutter는 보조기술 감지 조건)으로 다시 띄웠을 때 요소가 얼마나 늘어나는지.
 - Unity Accessibility 모듈을 켠 게임이 UIA에 노드로 보이는지 (이 PC에 Unity 앱 없음).

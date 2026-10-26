@@ -1,5 +1,5 @@
 // 수집원 uia-snapshot: 실행 중인 대상 창의 UI Automation 트리 (IF-20). 사용자 세션에서 실행한다 (IF-14)
-import type { Collector, CollectorContext, LiveUi, Target } from "../../core/types.ts";
+import type { Collector, CollectorContext, Limitation, LiveUi, Target } from "../../core/types.ts";
 import { asArray } from "../../ps/runner.ts";
 import { runInUserSession } from "../../session/index.ts";
 
@@ -32,9 +32,15 @@ export const uiaSnapshot: Collector = {
       elements: asArray(r.data.elements).map((e) => ({ ...e, patterns: asArray(e.patterns) })),
       truncated: !!r.data.truncated,
     };
-    const limitations = live.truncated
-      ? [{ code: "E_OUTPUT_TOO_LARGE" as const, collector: ID, message: `화면 요소가 많아 ${live.elements.length}개(깊이 ${UIA_LIMITS.maxDepth})까지만 읽었습니다.` }]
+    const minimized = asArray(r.data.minimized);
+    if (minimized.length) live.minimized = minimized;
+    const limitations: Limitation[] = live.truncated
+      ? [{ code: "E_OUTPUT_TOO_LARGE", collector: ID, message: `화면 요소가 많아 ${live.elements.length}개(깊이 ${UIA_LIMITS.maxDepth})까지만 읽었습니다.` }]
       : [];
+    // IF-20, F-30: 최소화된 창은 요소가 껍데기만 보인다. 창 상태는 바꾸지 않고 알리기만 한다
+    if (minimized.length) {
+      limitations.push({ code: "E_NOT_APPLICABLE", collector: ID, message: `최소화된 창 ${minimized.length}개는 화면 요소가 일부만 보입니다.`, hint: "창을 복원한 뒤 --live로 다시 읽으세요." });
+    }
     return {
       evidence: [{ id: `${ID}:ui-element:${t.path}`, source: ID, kind: "ui-element", payload: live as unknown as Record<string, unknown>, confidence: 0.9, locator: { file: t.path } }],
       limitations,

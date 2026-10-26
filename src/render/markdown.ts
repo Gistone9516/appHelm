@@ -1,4 +1,5 @@
 // OperationDoc → AI가 먼저 읽는 Markdown 요약. 4KB를 넘지 않는다 (IF-13).
+import { TOOLKITS } from "../core/toolkits.ts";
 import type { ComInterfaceDoc, ComServerDoc, InvokeVia, Operation, OperationDoc } from "../core/types.ts";
 
 export const MAX_MD_BYTES = 4096;
@@ -32,6 +33,17 @@ export function defaultInterface(c: ComServerDoc): ComInterfaceDoc | undefined {
   const cls = c.interfaces.find((i) => i.kind === "coclass" && i.guid?.toUpperCase() === c.clsid.toUpperCase());
   const name = cls?.implements?.[0];
   return name ? c.interfaces.find((i) => i.name === name && i.kind !== "coclass" && i.members.length > 0) : undefined;
+}
+
+/** IF-35: 툴킷마다 근거, 먼저 쓸 창구, 켜는 스위치를 한 줄씩 */
+export function toolkitLines(doc: OperationDoc): string[] {
+  const lines: string[] = [];
+  for (const t of doc.target.toolkits ?? []) {
+    const spec = TOOLKITS.find((s) => s.id === t.id);
+    lines.push(`- 툴킷: ${t.name} (${t.code}), 근거 ${t.evidence.slice(0, 2).join(", ")}`);
+    if (spec) lines.push(`  - 먼저 쓸 창구: ${spec.primary}${spec.enable ? `. 켜는 법: ${spec.enable}` : ""}`);
+  }
+  return lines;
 }
 
 /** 자동화 창구 요약. 항목마다 개수를 제한해 표가 들어갈 자리를 남긴다 (IF-13). */
@@ -80,6 +92,7 @@ export function renderMarkdown(doc: OperationDoc, jsonPath: string): string {
     `- 경로: \`${t.path}\``,
     `- 종류: ${t.family}${doc.version.FileVersion ? ` · 버전 ${doc.version.FileVersion}` : ""}`,
     `- 조작 방법 (우선순위): ${doc.summary.howToOperate.map((v) => VIA_LABEL[v]).join(" → ") || "찾지 못함"}`,
+    ...toolkitLines(doc),
   ];
   if (doc.summary.howToOperate.includes("wm_command")) {
     head.push("- 명령 ID는 프로그램 창에 WM_COMMAND(wParam=ID)로 보내면 해당 메뉴를 누른 것과 같습니다.");

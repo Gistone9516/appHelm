@@ -110,7 +110,7 @@ src/invoke/            실행 계층: com·window·uia(화면 요소 클릭/토�
 src/server/            에이전트 HTTP 핸들러 (map·invoke)
 src/transport/         Tailscale 노드 이름/IP 해석
 src/cli/               map·invoke-*·serve 명령과 원격 클라이언트
-src/core/              공유 타입, 부작용 허용 판정(IF-2), 파이프라인 (수집원 동시 실행)
+src/core/              공유 타입, 부작용 허용 판정(IF-2), 파이프라인 (수집원 동시 실행), UI 툴킷 표 (IF-35)
 src/pe/                PE 헤더·import 표·리소스 디렉터리 읽기, MUI 파일 탐색
 src/decoders/          리소스 바이트 해석: 메뉴·단축키·문자열·버전·대화상자, Delphi DFM, Electron asar
 src/rea-bridge/        REA CLI 실행(버전 6.7.0 고정, .NET·Electron·추적에만)
@@ -131,7 +131,7 @@ src/rea-bridge/ghidra.ts  Ghidra/JDK 위치 감지와 REA 주입 환경 변수
   delphi-dfm/            Delphi 이진 폼(DFM) 해석
   electron-js/           Electron 앱 package.json과 fuse (asar에서 직접)
   uia-snapshot/          실행 중인 창의 UI Automation 요소 (--live)
-src/probe/             대상 판별 (경로나 이름 → 실행 파일, 종류, MUI, Electron 위치)
+src/probe/             대상 판별 (경로나 이름 → 실행 파일, 종류, MUI, Electron 위치, UI 툴킷)
 src/merge/             수집 결과 → 조작 문서 (같은 명령 합치기, 이름 결정, 자동화 창구 정리)
 src/render/            Markdown 요약
 src/cli/               apphelm map 명령

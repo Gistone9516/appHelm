@@ -14,6 +14,14 @@ export interface Target {
   pe?: PeInfo;
   muiPaths: string[];
   electron?: ElectronApp;
+  toolkits?: ToolkitInfo[];
+}
+
+export interface ToolkitInfo {
+  id: string;
+  code: string;
+  name: string;
+  evidence: string[];
 }
 
 export interface ElectronApp {
@@ -188,6 +196,7 @@ export interface LiveUi {
   windows: string[];
   elements: UiElement[];
   truncated: boolean;
+  minimized?: string[];
 }
 
 export interface UiElement {
