@@ -177,10 +177,12 @@ export interface PortDoc {
 }
 
 export interface FormDoc {
-  framework: "winforms" | "wpf" | "delphi-vcl";
+  framework: "winforms" | "wpf" | "delphi-vcl" | "qml";
   className: string;
   title?: string;
   controls: FormControl[];
+  source?: string;
+  labels?: string[];
 }
 
 export interface FormControl {
@@ -205,6 +207,7 @@ export interface UiElement {
   name: string;
   automationId?: string;
   patterns: string[];
+  qmlType?: string;
 }
 
 export interface OperationDoc {

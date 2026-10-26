@@ -103,7 +103,7 @@ UI 툴킷 계열(Win32·COM·.NET·Delphi·웹기술·Qt/Java·게임·보호 �
 ## 구조
 
 ```
-_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-34, 실측 사실 F-1~F-28). 코드와 충돌하면 이 문서가 이긴다
+_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-36, 실측 사실 F-1~F-33). 코드와 충돌하면 이 문서가 이긴다
 bin/apphelm.mjs    실행 진입점 (tsx로 소스를 바로 실행)
 agent/apphelm-agent.ps1    무설치 원격 에이전트 (Windows 기본 PowerShell/.NET만, 대상 PC에서 직접 실행)
 src/invoke/            실행 계층: com·window·uia(화면 요소 클릭/토글/값)·http·shell
@@ -112,7 +112,7 @@ src/transport/         Tailscale 노드 이름/IP 해석
 src/cli/               map·invoke-*·serve 명령과 원격 클라이언트
 src/core/              공유 타입, 부작용 허용 판정(IF-2), 파이프라인 (수집원 동시 실행), UI 툴킷 표 (IF-35)
 src/pe/                PE 헤더·import 표·리소스 디렉터리 읽기, MUI 파일 탐색
-src/decoders/          리소스 바이트 해석: 메뉴·단축키·문자열·버전·대화상자, Delphi DFM, Electron asar
+src/decoders/          리소스 바이트 해석: 메뉴·단축키·문자열·버전·대화상자, Delphi DFM, Electron asar, Qt 리소스(rcc)와 QML
 src/rea-bridge/        REA CLI 실행(버전 6.7.0 고정, .NET·Electron·추적에만)
 src/ps/                PowerShell 5.1 스크립트 실행기와 스크립트(scripts/*.ps1, ASCII 전용). com-core.ps1은 COM 실행 로직 원본
 src/typelib/           타입 라이브러리 전체 덤프와 찾아보기 (서명·기본값·열거형 상수)
@@ -129,6 +129,7 @@ src/rea-bridge/ghidra.ts  Ghidra/JDK 위치 감지와 REA 주입 환경 변수
   local-ports/           실행 중인 대상이 연 TCP 포트 (연결은 하지 않음)
   dotnet/                .NET WinForms 폼 추정 (REA managed-members)
   delphi-dfm/            Delphi 이진 폼(DFM) 해석
+  qt-resources/          Qt 앱 exe 안의 QML에서 단축키와 라벨 (심볼 없이 rcc 표를 찾음)
   electron-js/           Electron 앱 package.json과 fuse (asar에서 직접)
   uia-snapshot/          실행 중인 창의 UI Automation 요소 (--live)
 src/probe/             대상 판별 (경로나 이름 → 실행 파일, 종류, MUI, Electron 위치, UI 툴킷)
@@ -145,7 +146,7 @@ test/unit/, test/e2e/         단위 테스트, 실제 Windows 앱 테스트
 - **MUI 파일을 따라간다 (IF-7).** Windows 기본 앱의 메뉴는 `ko-KR\notepad.exe.mui` 같은 별도 파일에 있다. 이걸 안 보면 메뉴가 통째로 빠진다.
 - **같은 명령은 하나의 작업으로 합친다 (IF-10, IF-15).** 메뉴 항목과 단축키를 명령 ID로 묶는다. 단축키 표끼리 같은 키를 다른 명령에 연결하면, 소수 쪽 표를 특정 모드용으로 분류해 기본 단축키에서 뺀다. 메모장의 SLIPUPACC 표가 Ctrl+C를 "끝내기"에 연결하고 있어서 생긴 규칙이다.
 - **COM은 서버의 기본 인터페이스를 앞세운다 (IF-17).** 서버 CLSID와 같은 coclass의 기본 인터페이스에서 예시 멤버를 뽑는다. 숨김 형식도 coclass가 가리키면 남긴다. IE의 IWebBrowser2가 `hidden`이라 일괄 제외하면 핵심 인터페이스가 빠졌다(F-12).
-- **런타임마다 UI 정의가 있는 곳이 다르다 (IF-22~IF-24).** .NET은 `InitializeComponent`의 호출·필드 순서로 폼을 추정하고(REA가 IL 오프셋을 안 줘서 추정이므로 신뢰도 0.5, F-13), Delphi는 RCDATA의 이진 폼(TPF0)을 직접 해석하며, Electron은 asar에서 package.json과 fuse만 읽는다. 전체 JS 분석은 느리고 출력이 커서(F-15) 하지 않는다.
+- **런타임마다 UI 정의가 있는 곳이 다르다 (IF-22~IF-24).** .NET은 `InitializeComponent`의 호출·필드 순서로 폼을 추정하고(REA가 IL 오프셋을 안 줘서 추정이므로 신뢰도 0.5, F-13), Delphi는 RCDATA의 이진 폼(TPF0)을 직접 해석하며, Qt Quick은 exe 안의 Qt 리소스 표를 찾아 QML 원문에서 단축키와 라벨을 읽고(IF-36), Electron은 asar에서 package.json과 fuse만 읽는다. 전체 JS 분석은 느리고 출력이 커서(F-15) 하지 않는다.
 - **화면 수집은 사용자 세션에서 한다 (IF-14, IF-20).** 서비스 세션(Session 0)에서는 창이 보이지 않는다(F-7). 그래서 1회용 예약 작업으로 사용자 세션에서 스크립트를 돌리고, 끝나면 작업을 지운다.
 - **PowerShell과는 파일로 주고받는다 (IF-21).** 스크립트는 ASCII만 쓰고, 입출력은 UTF-8 JSON 파일이다. PowerShell 5.1이 원소 1개 배열을 값으로 풀어 버리므로(F-11), 배열은 TypeScript 경계에서 `asArray()`로 맞춘다.
 - **인식·조작은 구조적인 것부터, 픽셀은 마지막 (IF-33).** Win32 창·표준 컨트롤 → UIA/MSAA 접근성 트리 → OCR(윈도우 내장) → 비전 순서. 글자 입력은 UIA로 하고, 스크린샷은 OCR·확인용 이미지일 뿐 기본 조작 수단이 아니다. 자동화도 접근성 트리도 없는 직접 그린 항목만 `screenshot`+좌표 `click`으로 조작한다 (IF-34). 카카오톡 '나와의 채팅'에 글자를 넣고 전송하는 것을 실증했다(F-28).

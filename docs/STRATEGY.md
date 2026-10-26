@@ -155,13 +155,13 @@ AppHelm은 배포 파일에서 툴킷을 판별할 수 있으므로 **"이 앱�
 - 버튼이 UIA에 없어 비전(스크린샷)과 좌표 클릭에 기댔다. IF-33의 마지막 단계다.
 - 열린 대화상자와 URL 입력칸은 UIA에 보이므로 글자 입력은 픽셀 없이 할 수 있다.
 - Qt Quick은 이름이 비어도 AutomationId에 QML 형식 이름이 남는다. 정적 라벨이 없을 때 쓸 단서다.
-- 같은 일을 스크린샷 없이도 했다. exe 안의 QML 원문에서 단축키(`StandardKey.New`)를 찾아 Ctrl+N을 보내고, 열림과 닫힘을 UIA로만 확인했다(F-32). QML 원문은 REA로는 못 읽지만 Qt 리소스 형식이라 AppHelm이 직접 풀 수 있다. Qt 리소스 수집기가 생기면 단축키와 라벨이 지도에 들어가 좌표 클릭이 필요 없어진다.
+- 같은 일을 스크린샷 없이도 했다. exe 안의 QML 원문에서 단축키(`StandardKey.New`)를 찾아 Ctrl+N을 보내고, 열림과 닫힘을 UIA로만 확인했다(F-32). QML 원문은 REA로는 못 읽지만 Qt 리소스 형식이라 AppHelm이 직접 풀 수 있다. 이후 `qt-resources` 수집원(IF-36)이 같은 일을 자동으로 해서, 지도 작업 표에 Ctrl+N 등 단축키 4개와 QML 화면 256개의 라벨이 들어간다(F-33).
 - 막힌 곳은 세 가지다. AppHelm에 창 복원 동작이 없고, `invoke-uia`가 이 앱에서 85초 제한에 걸리고, 스크린샷의 프로세스 기준 창 찾기가 고장 나 있었다(고침).
 
 ## 9. 남은 실측 후보
 
 - Flutter semantics를 켜는 공식 조건. 시스템 스크린리더 플래그(`SPI_SETSCREENREADER`)는 다른 앱에도 영향을 주는 전역 설정이라 사용자 동의 없이 바꾸지 않는다.
-- Qt6 Quick 앱의 빈 이름을 정적 리소스(qrc 안의 .qml)로 채울 수 있는지.
+- Qt 위젯 앱(.ui)과 QML을 미리 컴파일하고 원문을 뺀 앱에서도 Qt 리소스 수집이 통하는지.
 
 - Flutter와 Chromium 계열에서 접근성을 켜는 공식 방법(Chromium은 `--force-renderer-accessibility`, Flutter는 보조기술 감지 조건)으로 다시 띄웠을 때 요소가 얼마나 늘어나는지.
 - Unity Accessibility 모듈을 켠 게임이 UIA에 노드로 보이는지 (이 PC에 Unity 앱 없음).

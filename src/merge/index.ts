@@ -1,7 +1,7 @@
 // Evidence[] → OperationDoc. 같은 명령의 여러 출처를 하나의 작업으로 합친다 (IF-5, IF-9, IF-10).
 import { knownCommandName, titleFromString } from "./knownIds.ts";
 import type {
-  AutomationDoc, CliDoc, ComServerDoc, DialogDoc, Evidence, FormDoc, InvokeHint, InvokeVia, Limitation, LiveUi, MenuNode, Operation, OperationDoc, PortDoc, Target,
+  AutomationDoc, CliDoc, ComServerDoc, DialogDoc, Evidence, FormDoc, InvokeHint, InvokeVia, Limitation, LiveUi, MenuNode, Operation, OperationDoc, PortDoc, Target, UiElement,
 } from "../core/types.ts";
 
 export const INVOKE_ORDER: InvokeVia[] = ["com", "cli", "wm_command", "shortcut", "menu", "uia", "http", "shell"];
@@ -118,6 +118,25 @@ export function shortcutsByCommand(accels: AccelPayload[]): Map<number, { keys: 
   return out;
 }
 
+/** 작업 묶음 이름. QML은 리소스 경로의 마지막 두 마디로 화면을 구분한다 (IF-36) */
+function formGroup(f: FormDoc): string {
+  if (f.framework === "delphi-vcl") return "Delphi 폼";
+  if (f.framework === "qml") return `Qt 화면 ${(f.source ?? f.className).split("/").slice(-2).join("/")}`;
+  return ".NET 폼";
+}
+
+/** IF-36: AutomationId의 `<형식>_QMLTYPE_<n>` 중 QML 폼이 있는 가장 깊은 형식을 단다 */
+export function withQmlType(el: UiElement, forms: FormDoc[]): UiElement {
+  if (!el.automationId || !el.automationId.includes("_QMLTYPE_")) return el;
+  const known = new Set(forms.filter((f) => f.framework === "qml").map((f) => f.className));
+  let found: string | undefined;
+  for (const m of el.automationId.matchAll(/([A-Za-z_]\w*?)_QMLTYPE_\d+/g)) {
+    const type = m[1]!.split(".").pop()!;
+    if (known.has(type)) found = type;
+  }
+  return found ? { ...el, qmlType: found } : el;
+}
+
 export function merge(target: Target, evidence: Evidence[], limitations: Limitation[], provenance: OperationDoc["provenance"]): OperationDoc {
   const menuItems = evidence.filter((e) => e.kind === "menu-item").map((e) => e.payload as unknown as MenuItemPayload);
   const accels = evidence.filter((e) => e.kind === "accelerator").map((e) => e.payload as unknown as AccelPayload);
@@ -211,10 +230,11 @@ export function merge(target: Target, evidence: Evidence[], limitations: Limitat
       if (!c.text && c.handlers.length === 0 && !c.shortcut) continue;
       const invoke: InvokeHint[] = [];
       if (c.shortcut) invoke.push({ via: "shortcut", keys: c.shortcut });
-      if (c.name) invoke.push({ via: "uia", automationId: c.name, name: c.text ?? c.name, pattern: "Invoke" });
-      ops.set(`form:${f.className}:${c.name}`, {
+      // QML 컨트롤 이름은 UIA AutomationId가 아니다 (IF-36)
+      if (c.name && f.framework !== "qml") invoke.push({ via: "uia", automationId: c.name, name: c.text ?? c.name, pattern: "Invoke" });
+      ops.set(`form:${f.source ?? f.className}:${c.name}`, {
         title: c.text || c.name,
-        group: f.framework === "delphi-vcl" ? "Delphi 폼" : ".NET 폼",
+        group: formGroup(f),
         invoke,
         sources: [e.source],
         confidence: e.confidence,
@@ -224,7 +244,8 @@ export function merge(target: Target, evidence: Evidence[], limitations: Limitat
 
   // IF-20: 실행 중 UI 요소 이름이 작업 제목과 같으면 uia 힌트를 붙인다
   const liveEv = evidence.find((e) => e.kind === "ui-element");
-  const live = liveEv ? (liveEv.payload as unknown as LiveUi) : undefined;
+  const liveRaw = liveEv ? (liveEv.payload as unknown as LiveUi) : undefined;
+  const live = liveRaw ? { ...liveRaw, elements: liveRaw.elements.map((el) => withQmlType(el, forms)) } : undefined;
   if (live) {
     const byTitle = new Map<string, Operation>();
     for (const o of ops.values()) if (!byTitle.has(normalizeLabel(o.title))) byTitle.set(normalizeLabel(o.title), o);

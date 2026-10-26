@@ -73,11 +73,14 @@ export function automationLines(doc: OperationDoc): string[] {
     lines.push(`- Electron 앱: ${name ?? "이름 미상"}${rt.package.main ? `, 진입 \`${rt.package.main}\`` : ""}${rt.asar ? " (app.asar)" : ""}`);
     lines.push("  - 화면 조작은 `--remote-debugging-port`로 실행한 뒤 CDP로 붙어야 합니다 (4차).");
   }
-  for (const f of doc.ui.forms.slice(0, 3)) {
+  // QML 폼은 화면마다 하나라 수백 개다. 단축키가 있는 것만 요약에 올린다 (IF-36)
+  const shownForms = doc.ui.forms.filter((f) => f.framework !== "qml" || f.controls.length > 0);
+  for (const f of shownForms.slice(0, 3)) {
     const withHandlers = f.controls.filter((c) => c.handlers.length).length;
     lines.push(`- 폼 \`${f.className}\`${f.title ? ` "${f.title}"` : ""} (${f.framework}): 컨트롤 ${f.controls.length}개, 이벤트 처리기 ${withHandlers}개`);
   }
-  if (doc.ui.forms.length > 3) lines.push(`- 폼 ${doc.ui.forms.length - 3}개 더 (JSON ui.forms)`);
+  const hiddenForms = doc.ui.forms.length - Math.min(3, shownForms.length);
+  if (hiddenForms > 0) lines.push(`- 폼 ${hiddenForms}개 더 (JSON ui.forms)`);
   const live = doc.ui.live;
   if (live) lines.push(`- 실행 중 화면: 창 ${live.windows.map((w) => `"${w}"`).slice(0, 3).join(", ")}, 요소 ${live.elements.length}개${live.truncated ? " (일부)" : ""} (JSON ui.live)`);
   return lines.length ? ["", "## 자동화 창구", ...lines] : [];

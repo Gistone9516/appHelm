@@ -8,7 +8,8 @@ import { delphiDfm } from "../collectors/delphi-dfm/index.ts";
 import { dotnet } from "../collectors/dotnet/index.ts";
 import { electronJs } from "../collectors/electron-js/index.ts";
 import { localPorts } from "../collectors/local-ports/index.ts";
+import { qtResources } from "../collectors/qt-resources/index.ts";
 import { registryVerbs } from "../collectors/registry-verbs/index.ts";
 import { uiaSnapshot } from "../collectors/uia-snapshot/index.ts";
 
-export const ALL_COLLECTORS: Collector[] = [peResources, peImports, registryVerbs, comTypelib, localPorts, dotnet, delphiDfm, electronJs, uiaSnapshot];
+export const ALL_COLLECTORS: Collector[] = [peResources, peImports, registryVerbs, comTypelib, localPorts, dotnet, delphiDfm, qtResources, electronJs, uiaSnapshot];
