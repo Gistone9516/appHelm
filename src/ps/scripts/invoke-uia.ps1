@@ -1,6 +1,6 @@
-# 실행 계층(UIA): 실행 중인 대상 창에서 요소를 찾아 패턴을 실행한다(클릭·토글·값설정).
+# Operate layer (UIA): find an element in the running target's windows and run a pattern (click, toggle, set value).
 # ASCII only (IF-21). Input i.json: { target, name?, automationId?, controlType?, pattern?, value?, nth? }
-#   pattern: Invoke(기본) | Toggle | Expand | Collapse | Select | Value
+#   pattern: Invoke (default) | Toggle | Expand | Collapse | Select | Value
 $ErrorActionPreference = "Stop"
 $inPath = Join-Path $PSScriptRoot "i.json"
 $outPath = Join-Path $PSScriptRoot "o.json"
@@ -16,13 +16,20 @@ try {
   $tgt = [string]$p.target
   if ($tgt -match '[\\/]') { $procIds = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($_.Path -ieq $tgt) } | ForEach-Object { $_.Id }) }
   else { $base = $tgt -replace '\.exe$', ''; $procIds = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -ieq $base } | ForEach-Object { $_.Id }) }
-  if ($procIds.Count -eq 0) { Save @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-uia"; message = "대상이 실행 중이 아닙니다." } }; return }
+  if ($procIds.Count -eq 0) { Save @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-uia"; message = "target is not running" } }; return }
+
+  $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Select-Object ProcessId, ParentProcessId)
+  $scope = New-Object System.Collections.ArrayList
+  foreach ($id in $procIds) { [void]$scope.Add([int]$id) }
+  $i = 0
+  while ($i -lt $scope.Count) { $parent = $scope[$i]; foreach ($c in $all) { if ([int]$c.ParentProcessId -eq $parent -and -not $scope.Contains([int]$c.ProcessId)) { [void]$scope.Add([int]$c.ProcessId) } }; $i++ }
+  $procIds = @($scope.ToArray())
 
   $wantName = [string]$p.name; $wantId = [string]$p.automationId; $wantType = [string]$p.controlType
   $matches = New-Object System.Collections.ArrayList
-  # 각 최상위 창의 Descendants를 조회(창 단위라 빠름) 후 PowerShell에서 거른다
+  # query Descendants per top-level window (fast), then filter in PowerShell. IF-20: include descendant processes (CEF helpers)
   foreach ($procId in $procIds) {
-    $cond = New-Object System.Windows.Automation.PropertyCondition($A::ProcessIdProperty, $procId)
+    $cond = New-Object System.Windows.Automation.PropertyCondition($A::ProcessIdProperty, [int]$procId)
     $wins = $A::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $cond)
     $all = New-Object System.Collections.ArrayList
     foreach ($w in $wins) {
@@ -40,7 +47,7 @@ try {
       } catch {}
     }
   }
-  if ($matches.Count -eq 0) { Save @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-uia"; message = "조건에 맞는 요소를 찾지 못했습니다." } }; return }
+  if ($matches.Count -eq 0) { Save @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-uia"; message = "no element matches the conditions" } }; return }
   if ($p.list) {
     $items = New-Object System.Collections.ArrayList
     foreach ($e in $matches) {
@@ -66,7 +73,7 @@ try {
     "Collapse" { ($el.GetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern)).Collapse() }
     "Select" { ($el.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)).Select() }
     "Value" { ($el.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)).SetValue([string]$p.value) }
-    default { throw "알 수 없는 pattern: $pattern" }
+    default { throw "unknown pattern: $pattern" }
   }
   Save @{ ok = $true; detail = @{ pattern = $pattern; name = [string]$cur.Name; automationId = [string]$cur.AutomationId; controlType = ($cur.ControlType.ProgrammaticName -replace '^ControlType\.', ''); matchCount = $matches.Count } }
 } catch {

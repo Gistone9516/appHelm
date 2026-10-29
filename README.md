@@ -29,6 +29,7 @@ apphelm map notepad --live
 # 실제 조작 (바로 실행됨)
 apphelm invoke-com --progid Word.Application --attach --path "Selection.TypeText" --text "안녕"
 apphelm invoke-window --target "C:\Windows\System32\notepad.exe" --wm 26
+apphelm invoke-window --target "C:\...\app.exe" --show restore   # 최소화된 창을 앞으로 (키 입력 전에)
 apphelm invoke-uia --target "C:\...\WINWORD.EXE" --name "편집 사용" --pattern Invoke
 # 직접 그린 UI(자동화도 접근성 트리도 없는 앱): 창을 떠서 OCR로 좌표를 찾아 클릭
 apphelm invoke-type --x 2155 --y 801 --text "안녕" --enter   # 입력칸 비우고 입력 후 전송(덧붙음 없음)
@@ -103,7 +104,7 @@ UI 툴킷 계열(Win32·COM·.NET·Delphi·웹기술·Qt/Java·게임·보호 �
 ## 구조
 
 ```
-_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-36, 실측 사실 F-1~F-33). 코드와 충돌하면 이 문서가 이긴다
+_인터페이스계약.md     공유 계약 (규칙 IF-1~IF-37, 실측 사실 F-1~F-35). 코드와 충돌하면 이 문서가 이긴다
 bin/apphelm.mjs    실행 진입점 (tsx로 소스를 바로 실행)
 agent/apphelm-agent.ps1    무설치 원격 에이전트 (Windows 기본 PowerShell/.NET만, 대상 PC에서 직접 실행)
 src/invoke/            실행 계층: com·window·uia(화면 요소 클릭/토글/값)·http·shell

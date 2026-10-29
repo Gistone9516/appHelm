@@ -1,6 +1,6 @@
 // IF-21: PowerShell 5.1 스크립트 실행. 작업 폴더에 스크립트와 i.json을 두고, 스크립트가 o.json을 쓴다.
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { CollectorId, Limitation } from "../core/types.ts";
@@ -27,7 +27,11 @@ export function prepareJob(name: string, params: unknown, workDir: string): PsJo
   const dir = join(workDir, `j${process.pid}-${++seq}`);
   mkdirSync(dir, { recursive: true });
   const script = join(dir, "s.ps1");
-  copyFileSync(join(SCRIPTS, name), script);
+  // PowerShell 5.1은 BOM 없는 파일을 cp949로 읽는다. 한 글자라도 섞이면 문법 오류로 아예 안 돌아서(F-34)
+  // 복사할 때 BOM을 붙인다. 원본은 여전히 ASCII 전용이다 (IF-21)
+  const src = readFileSync(join(SCRIPTS, name));
+  const hasBom = src[0] === 0xef && src[1] === 0xbb && src[2] === 0xbf;
+  writeFileSync(script, hasBom ? src : Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), src]));
   writeFileSync(join(dir, "i.json"), JSON.stringify(params), "utf8");
   return { dir, script, output: join(dir, "o.json") };
 }

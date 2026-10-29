@@ -242,7 +242,7 @@ const TOOLS = [
         timeoutSec: { type: "number", description: "선택: 제한 시간(초). 큰 컬렉션 훑기(each)는 Word에서 원소당 약 75ms가 걸린다" },
         action: {
           type: "object",
-          description: "com: {kind,progId,attach?,steps:[{path,args?,setValue?,save?,each?:{props,max?}}]} 또는 단계 하나 {kind,progId,path,args?,setValue?}. 경로 문법: 'ActiveDocument.Paragraphs(3).Range' (괄호=인자/번호), '$이름.멤버'(save로 저장한 객체), 상수는 숫자로(com_reference로 값 확인). 단계는 한 번 연결해 차례로 실행되고 첫 실패에서 멈춥니다 / window: {kind,target,mode:wm_command|keys,commandId?,keys?} / uia: {kind,target,name?,automationId?,controlType?,pattern?,value?,list?} / http: {kind,url,method?,body?} / type: {kind,text,x?,y?,clear?(기본true),enter?} (입력칸 비우고 유니코드로 입력, 덧붙음 없음) / click: {kind,x,y,target?,button?,double?} (직접 그린 항목은 screenshot+OCR로 좌표를 찾아 클릭) / screenshot: {kind,target?,region?,base64?}",
+          description: "com: {kind,progId,attach?,steps:[{path,args?,setValue?,save?,each?:{props,max?}}]} 또는 단계 하나 {kind,progId,path,args?,setValue?}. 경로 문법: 'ActiveDocument.Paragraphs(3).Range' (괄호=인자/번호), '$이름.멤버'(save로 저장한 객체), 상수는 숫자로(com_reference로 값 확인). 단계는 한 번 연결해 차례로 실행되고 첫 실패에서 멈춥니다 / window: {kind,target,mode:wm_command|keys|show,commandId?,keys?,state?:restore|minimize|maximize} (keys는 대상 창이 실제로 맨 앞이 될 때만 보냄, 최소화된 창은 show restore로 먼저 꺼냄) / uia: {kind,target,name?,automationId?,controlType?,pattern?,value?,list?} / http: {kind,url,method?,body?} / type: {kind,text,x?,y?,clear?(기본true),enter?} (입력칸 비우고 유니코드로 입력, 덧붙음 없음) / click: {kind,x,y,target?,button?,double?} (직접 그린 항목은 screenshot+OCR로 좌표를 찾아 클릭) / screenshot: {kind,target?,region?,base64?}",
           properties: { kind: { type: "string", enum: ["com", "window", "uia", "http", "type", "click", "screenshot"] } },
           required: ["kind"],
         },

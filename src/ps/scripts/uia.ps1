@@ -69,7 +69,31 @@ try {
       Walk $w $title 0
     }
   }
-  Save @{ running = ($procIds.Count -gt 0); session = (Get-Process -Id $PID).SessionId; windows = @($windows.ToArray()); minimized = @($minimized.ToArray()); elements = @($script:elements.ToArray()); truncated = $script:truncated }
+  # F-35: windows cloaked by the shell (another virtual desktop) are left out of the UIA tree. Name them so the caller is not told "no window".
+  $cloaked = New-Object System.Collections.ArrayList
+  if ($windows.Count -eq 0 -and $scope.Count -gt 0) {
+    Add-Type -TypeDefinition @"
+using System; using System.Text; using System.Runtime.InteropServices; using System.Collections.Generic;
+public static class Cloak {
+  public delegate bool EnumProc(IntPtr h, IntPtr l);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr l);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+  [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int a, out int v, int s);
+  public static List<string> Titles(int[] pids) {
+    var set = new HashSet<uint>(); foreach (var p in pids) set.Add((uint)p);
+    var o = new List<string>();
+    EnumWindows((h, l) => { uint p; GetWindowThreadProcessId(h, out p); if (!set.Contains(p) || !IsWindowVisible(h)) return true;
+      int v; DwmGetWindowAttribute(h, 14, out v, 4); if (v == 0) return true;
+      var s = new StringBuilder(256); GetWindowText(h, s, 256); if (s.Length > 0) o.Add(s.ToString()); return true; }, IntPtr.Zero);
+    return o;
+  }
+}
+"@
+    foreach ($t in [Cloak]::Titles([int[]]@($scope.ToArray()))) { [void]$cloaked.Add($t) }
+  }
+  Save @{ running = ($procIds.Count -gt 0); session = (Get-Process -Id $PID).SessionId; windows = @($windows.ToArray()); minimized = @($minimized.ToArray()); cloaked = @($cloaked.ToArray()); elements = @($script:elements.ToArray()); truncated = $script:truncated }
 } catch {
   Save @{ error = $_.Exception.Message }
 }

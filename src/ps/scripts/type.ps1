@@ -1,6 +1,6 @@
 # Operate layer (IF-34): focus, clear, type Unicode text, optionally send. ASCII only (IF-21).
 # Input i.json: { text, x?, y?, target?, clear?(default true), enter? }
-# 유니코드 키 입력(SendInput)이라 한국어가 안전하고, clear 기본값이 true라 기존 내용에 덧붙지 않는다.
+# Unicode SendInput keeps Korean safe; clear defaults to true so text never appends to old content.
 $ErrorActionPreference = "Stop"
 $inPath = Join-Path $PSScriptRoot "i.json"
 $outPath = Join-Path $PSScriptRoot "o.json"
@@ -24,7 +24,7 @@ public static class Typer {
   static void Send(INPUT[] a) { SendInput((uint)a.Length, a, Marshal.SizeOf(typeof(INPUT))); }
   public static void TypeText(string s) {
     foreach (char c in s) {
-      // 개행은 Enter로 (Shift+Enter면 줄바꿈이지만 여기선 평문)
+      // newline becomes Enter (Shift+Enter would be a soft break; plain text here)
       Send(new INPUT[] { Key(0, c, UNICODE), Key(0, c, UNICODE | KEYUP) });
     }
   }

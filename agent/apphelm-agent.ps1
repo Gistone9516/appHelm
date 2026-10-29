@@ -4,7 +4,7 @@
 # 조작하는 쪽(.53)에서:  $env:APPHELM_TOKEN="<토큰>"; apphelm invoke-com ... --host <이 노드>
 param([string]$Token, [int]$Port = 47817)
 $ErrorActionPreference = "Stop"
-$AgentVersion = "2026-10-25.8-type"  # 조작하는 쪽이 /health로 버전을 확인한다
+$AgentVersion = "2026-10-30.9-fg"  # 조작하는 쪽이 /health로 버전을 확인한다
 if (-not $Token) { Write-Error "토큰이 필요합니다: -Token <값>"; exit 1 }
 
 # COM은 에이전트 메인 스레드(STA)에서 직접 실행한다. 자식 런스페이스에서는 COM 지연바인딩이
@@ -261,6 +261,7 @@ function Invoke-WithTimeout($action, [int]$timeoutMs) {
     Add-Type -TypeDefinition @"
 using System; using System.Runtime.InteropServices;
 public static class NativeWin2 {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
   [DllImport("user32.dll", SetLastError=true)] public static extern bool SetForegroundWindow(IntPtr h);
   public const uint WM_COMMAND = 0x0111;
@@ -271,7 +272,7 @@ public static class NativeWin2 {
       $h = ($procs | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1).MainWindowHandle
       if (-not $h) { return @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-window"; message = "대상의 최상위 창을 찾지 못했습니다." } } }
       if ($a.mode -eq "wm_command") { [void][NativeWin2]::SendMessage($h, [NativeWin2]::WM_COMMAND, [IntPtr][int]$a.commandId, [IntPtr]::Zero); return @{ ok = $true; detail = @{ ok = $true; mode = "wm_command"; commandId = [int]$a.commandId } } }
-      elseif ($a.mode -eq "keys") { [void][NativeWin2]::SetForegroundWindow($h); Start-Sleep -Milliseconds 150; Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait([string]$a.keys); return @{ ok = $true; detail = @{ ok = $true; mode = "keys"; keys = [string]$a.keys } } }
+      elseif ($a.mode -eq "keys") { [void][NativeWin2]::SetForegroundWindow($h); Start-Sleep -Milliseconds 150; if ([NativeWin2]::GetForegroundWindow() -ne $h) { return @{ ok = $false; limitation = @{ code = "E_NOT_APPLICABLE"; collector = "invoke-window"; message = "target window did not become foreground; keys were not sent" } } }; Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait([string]$a.keys); return @{ ok = $true; detail = @{ ok = $true; mode = "keys"; keys = [string]$a.keys } } }
       return @{ ok = $false; limitation = @{ code = "E_PARSE"; collector = "invoke-window"; message = "알 수 없는 mode" } }
     }
     function Invoke-Uia($a) {

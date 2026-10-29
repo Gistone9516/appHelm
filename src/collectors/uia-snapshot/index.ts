@@ -34,10 +34,16 @@ export const uiaSnapshot: Collector = {
     };
     const minimized = asArray(r.data.minimized);
     if (minimized.length) live.minimized = minimized;
+    const cloaked = asArray(r.data.cloaked);
+    if (cloaked.length) live.cloaked = cloaked;
     const limitations: Limitation[] = live.truncated
       ? [{ code: "E_OUTPUT_TOO_LARGE", collector: ID, message: `화면 요소가 많아 ${live.elements.length}개(깊이 ${UIA_LIMITS.maxDepth})까지만 읽었습니다.` }]
       : [];
     // IF-20, F-30: 최소화된 창은 요소가 껍데기만 보인다. 창 상태는 바꾸지 않고 알리기만 한다
+    // F-35: 다른 가상 데스크톱으로 가려진 창은 UIA 트리에 없다
+    if (cloaked.length) {
+      limitations.push({ code: "E_NOT_APPLICABLE", collector: ID, message: `창 ${cloaked.length}개(${cloaked.slice(0, 2).join(", ")})가 다른 가상 데스크톱에 있어 화면 요소를 읽지 못했습니다.`, hint: "그 데스크톱으로 전환하거나 창을 지금 데스크톱으로 옮긴 뒤 다시 읽으세요." });
+    }
     if (minimized.length) {
       limitations.push({ code: "E_NOT_APPLICABLE", collector: ID, message: `최소화된 창 ${minimized.length}개는 화면 요소가 일부만 보입니다.`, hint: "창을 복원한 뒤 --live로 다시 읽으세요." });
     }

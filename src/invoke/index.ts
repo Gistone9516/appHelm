@@ -5,7 +5,7 @@ import { request } from "node:http";
 import { request as requestHttps } from "node:https";
 import { spawn } from "node:child_process";
 import type { Limitation } from "../core/types.ts";
-import { asArray, runPsScript } from "../ps/runner.ts";
+import { asArray, runPsScript, type PsResult } from "../ps/runner.ts";
 import { runInUserSession } from "../session/index.ts";
 
 export type InvokeResult = { ok: true; detail: Record<string, unknown> } | { ok: false; limitation: Limitation };
@@ -54,9 +54,11 @@ export function comFailureMessage(steps: ComStepResult[]): string {
 export interface WindowAction {
   kind: "window";
   target: string;
-  mode: "wm_command" | "keys";
+  mode: "wm_command" | "keys" | "show";
   commandId?: number;
   keys?: string;
+  /** mode = show일 때 */
+  state?: "restore" | "minimize" | "maximize";
 }
 
 export interface HttpAction {
@@ -110,6 +112,15 @@ export interface ScreenshotAction {
 
 export type InvokeAction = ComAction | WindowAction | HttpAction | ShellAction | UiaAction | ClickAction | TypeAction | ScreenshotAction;
 
+/** 화면 조작 스크립트의 결과. 실행기가 성공해도 스크립트가 `ok: false`를 돌려주면 실패다 (F-34) */
+export function fromScript(r: PsResult<{ ok: boolean; limitation?: Limitation }>, kind: string): InvokeResult {
+  if (!r.ok) return { ok: false, limitation: r.limitation };
+  if (r.data.ok === false) {
+    return { ok: false, limitation: r.data.limitation ?? { code: "E_PS_FAILED", collector: `invoke-${kind}`, message: "스크립트가 실패를 돌려주었습니다." } };
+  }
+  return { ok: true, detail: r.data };
+}
+
 export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<InvokeResult> {
   switch (action.kind) {
     case "com": {
@@ -130,9 +141,9 @@ export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<Invo
     }
     case "window": {
       // 창 조작은 대상과 같은 세션에서 돌아야 한다 (IF-14, F-7)
-      const params = { target: action.target, mode: action.mode, commandId: action.commandId, keys: action.keys };
+      const params = { target: action.target, mode: action.mode, commandId: action.commandId, keys: action.keys, state: action.state };
       const r = await runInUserSession<{ ok: boolean }>("invoke-window.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 20000, collector: "invoke-window" });
-      return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
+      return fromScript(r, action.kind);
     }
     case "uia": {
       // 화면 요소 조작도 대상과 같은 세션에서 돌아야 한다 (IF-14)
@@ -145,7 +156,7 @@ export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<Invo
       if (action.nth !== undefined) params.nth = action.nth;
       if (action.list) params.list = true;
       const r = await runInUserSession<{ ok: boolean }>("invoke-uia.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 25000, collector: "invoke-uia" });
-      return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
+      return fromScript(r, action.kind);
     }
     case "type": {
       const params: Record<string, unknown> = { text: action.text };
@@ -153,7 +164,7 @@ export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<Invo
       if (action.clear === false) params.clear = false;
       if (action.enter) params.enter = true;
       const r = await runInUserSession<{ ok: boolean; typed: number; sent: boolean }>("type.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 20000, collector: "invoke-type" });
-      return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
+      return fromScript(r, action.kind);
     }
     case "click": {
       const params: Record<string, unknown> = { x: action.x, y: action.y };
@@ -161,7 +172,7 @@ export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<Invo
       if (action.button) params.button = action.button;
       if (action.double) params.double = true;
       const r = await runInUserSession<{ ok: boolean; x: number; y: number }>("click.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 20000, collector: "invoke-click" });
-      return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
+      return fromScript(r, action.kind);
     }
     case "screenshot": {
       const out = join(ctx.workDir, `shot-${Date.now()}.png`);
@@ -170,7 +181,7 @@ export async function invoke(action: InvokeAction, ctx: InvokeCtx): Promise<Invo
       if (action.region) params.region = action.region;
       if (action.base64) params.base64 = true;
       const r = await runInUserSession<{ ok: boolean; path: string; w: number; h: number; base64?: string }>("screenshot.ps1", params, { workDir: ctx.workDir, timeoutMs: ctx.timeoutMs + 20000, collector: "invoke-screenshot" });
-      return r.ok ? { ok: true, detail: r.data } : { ok: false, limitation: r.limitation };
+      return fromScript(r, action.kind);
     }
     case "http":
       return invokeHttp(action, ctx);

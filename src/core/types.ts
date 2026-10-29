@@ -199,6 +199,7 @@ export interface LiveUi {
   elements: UiElement[];
   truncated: boolean;
   minimized?: string[];
+  cloaked?: string[];
 }
 
 export interface UiElement {

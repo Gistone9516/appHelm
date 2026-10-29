@@ -57,7 +57,9 @@ export function buildAction(cmd: string, rest: string[]): InvokeAction | string 
     const keys = opt(rest, "--keys");
     if (wm) return { kind: "window", target, mode: "wm_command", commandId: Number(wm) };
     if (keys) return { kind: "window", target, mode: "keys", keys };
-    return "invoke-window에는 --wm <명령ID> 또는 --keys <키>가 필요합니다.";
+    const show = opt(rest, "--show");
+    if (show === "restore" || show === "minimize" || show === "maximize") return { kind: "window", target, mode: "show", state: show };
+    return "invoke-window에는 --wm <명령ID>, --keys <키>, --show restore|minimize|maximize 중 하나가 필요합니다.";
   }
   if (cmd === "invoke-uia") {
     const target = opt(rest, "--target");

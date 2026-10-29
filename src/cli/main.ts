@@ -57,6 +57,7 @@ invoke-window 옵션:
   --target <exe 경로>  대상 실행 파일
   --wm <명령ID>        WM_COMMAND로 메뉴 명령 실행
   --keys <키>          SendKeys 형식 (예: ^s = Ctrl+S)
+  --show <상태>        restore|minimize|maximize (창을 앞으로 꺼내거나 내림)
   --host <이름|IP>     원격 노드에서 실행
 
 invoke-uia 옵션:
