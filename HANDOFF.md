@@ -1,61 +1,46 @@
 # 인계 노트
 
 ## 목표
-- AppHelm을 원격 기능 없이도 다른 Windows PC에 금방 설치해 바로 쓸 수 있게 만들기.
-  - 사용자 결정: "원격 말고는 다른 컴퓨터에서 금방 설치 가능해야 해. 원격은 내 세팅일 뿐" (2026-10-25)
-- 백로그 6건 중 1번 "로컬 의존성 없애기"에 해당. 2번 "실행 경량화"도 일부 겹침.
+- AppHelm(`F:\SUAN\2026-2\REA Adapter`, GitHub `Gistone9516/appHelm`)은 Windows 앱의 구조를 읽어 AI용 조작 문서를 만들고, 같은 경로로 조작하는 도구.
+- 현재 방침은 새 기획 없이 **기반 다지기**.
+- 제품 방향(2026-10-26 확정)은 "AI 직접 조작"과 "실시간 조언"을 모두 가져가는 것. 실시간 조언은 Laya가 사용자 조작을 감시하다 조언 신호를 내면 LLM이 받아 행동하는 구조(`docs/LAYA.md`).
 
 ## 한 일
-- **일반 exe 분석에서 REA 의존 제거.** PE 리소스 디렉터리(형식→이름→언어 3단계)를 직접 읽는 `src/pe/resources.ts`를 새로 만듦.
-  - 바꾸기 전에 REA `inspect-pe-resources`와 8개 파일에서 비교함. 대상은 notepad·regedit(exe+.mui), mspaint, explorer, shell32, SampleApp.
-  - 위치·크기·순서까지 완전히 같았음. explorer는 683건, 그중 이름 항목 427건 포함.
-  - 확인 후 REA 경로 `src/rea-bridge/peResources.ts`는 삭제함. 같은 일을 두 곳에서 하지 않기 위해서임.
-- **REA는 .NET 폼, Electron fuse, Ghidra 추적에만 남음.** 이 대상들은 첫 실행에 REA를 내려받아 1분쯤 걸림.
-- **버그 수정.** Git Bash에서 `apphelm map notepad`가 `C:\Program Files\Git\usr\bin\notepad`(셸 스크립트)를 골라 실패하던 문제.
-  - `src/probe/index.ts`의 탐색 순서를 바꿔 이름 후보(.exe 먼저)를 바깥 고리로 둠. 계약서 IF-25로 기록.
-- **패키징.** `package.json`에 `files` 필드 추가(bin, src, agent, README.md).
-  - README의 설치와 MCP 등록 안내에서 절대경로를 없앰.
-- **검증 결과**
-  - 단위 51, e2e 10 통과. typecheck와 check:boundaries도 통과.
-  - npx가 없는 PATH에서 notepad 지도 생성 4.6초(메뉴 5, 작업 38).
-  - `npm pack`으로 만든 패키지(66KB)를 임시 prefix에 설치하는 데 4초. 설치본에서 `apphelm map`과 `apphelm-mcp` 응답(initialize, tools/list) 정상.
-- **커밋.** 로컬 커밋 `bf88287` "리소스 읽기에서 REA 의존 제거, npm 한 줄 설치 정리". **아직 push 안 함.**
+- **툴킷 조사 9묶음과 전략 문서.** `docs/research/01~09-*.md`, 종합은 `docs/STRATEGY.md`.
+- **툴킷 판별** (`4e05de5`, IF-35). Qt, Flutter, CEF, WebView2, Java, GTK, Unity를 `src/core/toolkits.ts` 표 하나로 판별. 실행 중 화면 읽기는 자손 프로세스 창까지, 최소화된 창은 알림(IF-20).
+- **Qt 리소스 수집원** (`ad90443`, IF-36). exe 안의 Qt 리소스 표를 심볼 없이 찾아 QML의 단축키와 라벨을 지도에 넣음. Free Download Manager에서 Ctrl+N "다운로드 추가"가 지도에 나오고, 스크린샷 없이 조작됨(F-32, F-33).
+- **조작 단계 고침** (`db30c61`, IF-37).
+  - `invoke-uia` 85초 시간 초과의 진짜 원인은 스크립트 속 한국어를 PowerShell 5.1이 cp949로 읽어 문법 오류로 아예 안 돈 것(F-34). 스크립트를 ASCII로 바꾸고 실행기가 복사본에 BOM을 붙임. 4초로 줄어듦.
+  - 스크립트가 `ok:false`를 돌려줘도 성공으로 보고하던 다섯 곳을 `fromScript` 하나로 모음.
+  - `invoke-window --keys`는 대상 창이 실제 맨 앞일 때만 키를 보냄. 전에는 실패해도 보내서 다른 앱에 입력될 수 있었음. 원격 에이전트도 같게 고침(버전 `2026-10-30.9-fg`).
+  - 다른 가상 데스크톱으로 간 창(`cloaked`)은 UIA에서 빠짐(F-35). 실행 중 화면 읽기가 이를 알리고, 키와 창 복원은 거부함.
+  - `invoke-window --show restore|minimize|maximize` 추가.
+  - `invoke-screenshot`이 프로세스 기준으로 창을 못 찾던 버그 고침(`f4b3f2f`, SH-38).
+- **검증:** 단위 80, e2e 10, typecheck, check:boundaries, build-ps --check 모두 통과.
+- push는 `ad90443`까지 했고, `db30c61`과 이 노트는 로컬 커밋만 됨.
 
 ## 다음 단계
-1. 사용자 승인을 받고 push. 이 PC는 자격 증명 문제로 사용자가 직접 실행해야 함.
-   - `git -c safe.directory=* -C "F:\SUAN\2026-2\REA Adapter" push origin main`
-2. push 후 실제 설치 확인: `npm install -g github:Gistone9516/appHelm`, 이어서 `apphelm map notepad`.
-3. MCP 등록을 새 방식으로 바꿀지 결정. 지금 이 PC는 옛 방식(절대경로 + 옛 토큰)으로 등록돼 있음.
-   - 새 방식: `claude mcp remove apphelm` 후 `claude mcp add apphelm -- cmd /c apphelm-mcp`
-   - 원격을 쓰면 `-e APPHELM_TOKEN=<토큰>`을 이름 뒤, `--` 앞에 넣음.
-4. 남은 백로그(`memory/next-steps.md`):
-   - 2번 실행 경량화: .NET·Electron 대상의 REA 첫 다운로드를 줄이는 것이 남음.
-   - 3번 프롬프트 튜닝, 4번 skill화, 5번 Git 꾸미기(readme-writing 스킬 사용).
-   - 6번 "Laya 레이어"는 뜻부터 사용자에게 물어볼 것.
+1. **Free Download Manager로 조작 전체 흐름 재실측.** 지금 그 창이 다른 가상 데스크톱에 있어서(`cloaked=2`) 못 함. 사용자가 창을 지금 데스크톱으로 옮기면 `--show restore`, Ctrl+N, UIA 확인, Esc 순서로 잼.
+2. **원격 에이전트 재배포.** 노트북은 구버전일 수 있음. 새 버전은 `2026-10-30.9-fg`.
+3. **`STRATEGY.md` 6장 남은 항목.** 보호 앱(G5) 사전 판정, Delphi 설치기의 빈 이름(`*`)을 UIA 이름으로 채우기, Electron 퓨즈를 `.ops.md`에 표시, `--out`의 풀리지 않은 `%TEMP%` 거부.
+4. **Qt 수집원 다듬기.** 작업 이름이 코드(`buildDownloadDlg.newDownload()`)라 라벨로 바꾸기, zstd 리소스 읽기.
+5. **중복 로직 합치기.** click/type/screenshot/window/uia가 `src/ps/scripts`와 `agent/apphelm-agent.ps1`에 두 벌. 이번 키 안전장치도 두 곳에 따로 넣었음.
+6. **Laya 붙이기 전 측정** (`docs/LAYA.md` 6장).
+7. **이전 세션 백로그.** 실행 경량화, 응용 계층 전수 조사 프롬프트 튜닝, skill화, 포트폴리오용 README.
 
 ## 미결 결정
-- push 여부. 외부 공개라서 승인이 필요함.
-- 이 PC의 MCP 등록을 설치본(`cmd /c apphelm-mcp`)으로 바꿀지, 개발 폴더를 직접 가리키게 둘지.
-- .NET·Electron 분석도 REA 없이 할지. .NET 메타데이터 리더는 작업량이 커서 보류 중임.
-- Node 버전: `engines`는 `>=20`. REA 없는 경로는 Node 20에서 실측하지 않았음. 이 PC는 24.22.0.
+- **집중할 툴킷.** 결정 기록은 없음. 10-26 이전 세션에서 제안만 있었음(강점 Win32·COM·Delphi + 격차 Electron·Qt). 사용자 확정 필요.
+- **Flutter semantics 시험.** 남은 길은 전역 스크린리더 플래그(`SPI_SETSCREENREADER`)나 내레이터 실행. 2026-10-30 사용자가 "프로그램 실행 권한 다 줄게"라고 했으나 전역 설정까지 포함하는지는 확인 안 함.
+- **전자금융거래법.** AI에게 인증정보를 맡기는 것이 접근매체 대여인지 법률 검토 필요. 그전까지 금융 인증은 사람이 함.
+- **전역 설정 경고 3건** (`~/.claude`, 로컬 커밋 `84079e8`, push 안 함).
+  - 훅 차이: 이 PC의 settings.json에만 SessionStart `git pull` 훅이 있음. 예시 파일에 넣을지(모든 PC가 자동 pull) 정해야 함.
+  - CLAUDE.md가 9,786바이트로 한도 9,700을 86바이트 넘음. 규칙 파일이라 줄이는 건 사용자 확인 후.
+  - 외부 앱 2개(Discord Agents, learning-harness)는 다른 PC 경로(`C:\Users\USER\...`)라 이 PC에선 원래 없음. 이 PC에 있으면 `CLAUDE_APP_*` 환경변수로 지정.
 
-## 건드린 파일
-- 새로 만듦
-  - `src/pe/resources.ts`
-  - `test/unit/pe-resources.test.ts`
-  - `test/unit/probe.test.ts`
-- 삭제: `src/rea-bridge/peResources.ts`
-- 수정
-  - `src/collectors/pe-resources/index.ts`, `src/collectors/delphi-dfm/index.ts`
-  - `src/pe/pe.ts` (머리 주석만)
-  - `src/probe/index.ts`
-  - `test/e2e/windows-apps.test.ts` (주석·제목)
-  - `package.json`
-  - `README.md`, `HANDOFF.md`
-  - `_인터페이스계약.md`: IF-6·IF-8·IF-12 개정, IF-25와 F-24 추가, §4 폴더 지도
-- 메모리: `C:\Users\ckffl\.claude\projects\F--SUAN-2026-2-REA-Adapter\memory\next-steps.md` (1번 완료 표시)
-- 이번 작업과 무관한 미해결 사항: 세션 시작 점검에서 `~/.claude` 설정 불일치 4건이 보고됨. 사용자에게 알렸고 아직 처리하지 않음.
-  - 훅 불일치
-  - `skills\synced` 미등록
-  - CLAUDE.md 크기 초과
-  - 외부 앱 경로 2개
+## 건드린 파일 (2026-10-30)
+- 코드: `src/ps/runner.ts`(BOM), `src/ps/scripts/{invoke-uia,invoke-window,type,uia}.ps1`, `src/invoke/index.ts`(`fromScript`, show), `src/cli/{invoke,main}.ts`, `src/mcp/server.ts`, `src/core/types.ts`(`LiveUi.cloaked`), `src/collectors/uia-snapshot/index.ts`, `agent/apphelm-agent.ps1`.
+- 테스트: `test/unit/ps-scripts.test.ts`.
+- 문서: `_인터페이스계약.md`(IF-37, F-34, F-35, IF-20), `README.md`.
+- 전역: `~/.claude/scripts/check-manifest.ps1`, `.gitignore`, `skills/work-rules-shell/SKILL.md`, `manifest.json`.
+- 명령: git은 `git -c safe.directory=* -C "F:/SUAN/2026-2/REA Adapter" …`. push는 도구 셸에서 자격 증명이 막혀 `schtasks /rl LIMITED /it`로 사용자 세션에서 실행. 화면이 필요한 실험도 같은 방법.
+- 실측 임시 파일: `%TEMP%\apphelm-measure\`.
