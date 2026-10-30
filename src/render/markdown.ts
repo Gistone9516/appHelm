@@ -35,6 +35,28 @@ export function defaultInterface(c: ComServerDoc): ComInterfaceDoc | undefined {
   return name ? c.interfaces.find((i) => i.name === name && i.kind !== "coclass" && i.members.length > 0) : undefined;
 }
 
+/** REA inspect-electron-fuses 결과에서 {name, state} 목록만 꺼낸다. 형식이 바뀌어도 깨지지 않게 이름으로 찾는다 */
+export function electronFuses(runtime: unknown): { name: string; state: string }[] {
+  const out: { name: string; state: string }[] = [];
+  const seen = new Set<string>();
+  const walk = (v: unknown, depth: number) => {
+    if (!v || typeof v !== "object" || depth > 6) return;
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x, depth + 1);
+      return;
+    }
+    const o = v as Record<string, unknown>;
+    if (typeof o.name === "string" && typeof o.state === "string" && !seen.has(o.name)) {
+      seen.add(o.name);
+      out.push({ name: o.name, state: o.state });
+      return;
+    }
+    for (const x of Object.values(o)) walk(x, depth + 1);
+  };
+  walk((runtime as { fuses?: unknown } | undefined)?.fuses, 0);
+  return out;
+}
+
 /** IF-35: 툴킷마다 근거, 먼저 쓸 창구, 켜는 스위치를 한 줄씩 */
 export function toolkitLines(doc: OperationDoc): string[] {
   const lines: string[] = [];
@@ -72,6 +94,8 @@ export function automationLines(doc: OperationDoc): string[] {
     const name = rt.package.productName ?? rt.package.name;
     lines.push(`- Electron 앱: ${name ?? "이름 미상"}${rt.package.main ? `, 진입 \`${rt.package.main}\`` : ""}${rt.asar ? " (app.asar)" : ""}`);
     lines.push("  - 화면 조작은 `--remote-debugging-port`로 실행한 뒤 CDP로 붙어야 합니다 (4차).");
+    const fuses = electronFuses(doc.runtime);
+    if (fuses.length) lines.push(`  - 퓨즈: ${fuses.map((f) => `${f.name} ${f.state === "enabled" ? "켜짐" : f.state === "disabled" ? "꺼짐" : f.state}`).join(", ")}`);
   }
   // QML 폼은 화면마다 하나라 수백 개다. 단축키가 있는 것만 요약에 올린다 (IF-36)
   const shownForms = doc.ui.forms.filter((f) => f.framework !== "qml" || f.controls.length > 0);

@@ -122,3 +122,10 @@ test("IF-35: 툴킷마다 근거와 먼저 쓸 창구, 켜는 법을 적고 4KB�
   assert.match(md, /먼저 쓸 창구: CDP.*켜는 법: `--remote-debugging-port/);
   assert.ok(Buffer.byteLength(md, "utf8") <= MAX_MD_BYTES);
 });
+
+test("IF-24: REA 퓨즈 결과가 중첩돼 있어도 이름과 상태를 한 번씩 꺼낸다", async () => {
+  const { electronFuses } = await import("../../src/render/markdown.ts");
+  const runtime = { fuses: { slices: [{ sentinels: [{ fuses: [{ index: 0, name: "RunAsNode", state: "disabled" }, { index: 3, name: "EnableNodeCliInspectArguments", state: "enabled" }] }] }, { sentinels: [{ fuses: [{ name: "RunAsNode", state: "disabled" }] }] }] } };
+  assert.deepEqual(electronFuses(runtime), [{ name: "RunAsNode", state: "disabled" }, { name: "EnableNodeCliInspectArguments", state: "enabled" }]);
+  assert.deepEqual(electronFuses(undefined), []);
+});
