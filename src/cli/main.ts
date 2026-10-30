@@ -9,6 +9,7 @@ import { merge } from "../merge/index.ts";
 import { createProbe } from "../probe/index.ts";
 import { createReaRunner } from "../rea-bridge/runner.ts";
 import { renderMarkdown } from "../render/markdown.ts";
+import { unexpandedEnv } from "./libs.ts";
 import { ALL_COLLECTORS } from "./collectors.ts";
 import { runInvoke } from "./invoke.ts";
 import { runLs, runPull, runRef, runTypelib } from "./libs.ts";
@@ -100,6 +101,8 @@ function parseArgs(argv: string[]): Args | string {
     else a.target = v;
   }
   if (!a.target) return USAGE;
+  const env = unexpandedEnv(a.out);
+  if (env) return `--out에 풀리지 않은 환경변수 %${env}%가 있습니다. PowerShell에서는 $env:${env}로 쓰세요.`;
   return a;
 }
 

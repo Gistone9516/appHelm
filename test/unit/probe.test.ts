@@ -57,3 +57,9 @@ test("deep이 아닌 툴킷은 하위 폴더를 보지 않고, 깊이 3보다 �
   const root = appDir(["app.exe", join("plugins", "Qt6Core.dll"), join("a", "b", "c", "d", "libcef.dll")]);
   assert.deepEqual(findToolkits(join(root, "app.exe"), []), []);
 });
+
+test("STRATEGY 6-5: --out에 풀리지 않은 %환경변수%가 남으면 그 이름을 돌려준다", async () => {
+  const { unexpandedEnv } = await import("../../src/cli/libs.ts");
+  assert.equal(unexpandedEnv("%TEMP%/apphelm-research/g1"), "TEMP");
+  assert.equal(unexpandedEnv("C:/Users/me/AppData/Local/Temp/x"), undefined);
+});

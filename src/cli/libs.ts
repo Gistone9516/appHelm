@@ -5,6 +5,11 @@ import { basename, join, resolve } from "node:path";
 import { remoteFile, remoteList } from "../transport/client.ts";
 import { dumpTypelib, listTypelibs, loadTypelib, searchTypelib } from "../typelib/index.ts";
 
+/** 셸이 풀지 않은 환경변수(`%TEMP%`)가 남은 경로면 그 이름. PowerShell은 `%…%`를 풀지 않아 작업 폴더에 그 이름의 폴더가 생긴다 (STRATEGY 6장) */
+export function unexpandedEnv(path: string): string | undefined {
+  return /%([A-Za-z_][A-Za-z0-9_]*)%/.exec(path)?.[1];
+}
+
 function opt(rest: string[], name: string): string | undefined {
   const i = rest.indexOf(name);
   return i >= 0 ? rest[i + 1] : undefined;
@@ -28,7 +33,14 @@ export async function runLs(rest: string[]): Promise<number> {
 
 export async function runPull(rest: string[]): Promise<number> {
   const host = opt(rest, "--host");
-  const out = resolve(opt(rest, "--out") ?? "apphelm-pull");
+  const rawOut = opt(rest, "--out") ?? "apphelm-pull";
+  const env = unexpandedEnv(rawOut);
+  if (env) {
+    process.stderr.write(`--out에 풀리지 않은 환경변수 %${env}%가 있습니다. PowerShell에서는 $env:${env}로 쓰세요.
+`);
+    return 2;
+  }
+  const out = resolve(rawOut);
   const paths: string[] = [];
   for (let i = 0; i < rest.length; i++) if (rest[i] === "--path" && rest[i + 1]) paths.push(rest[++i]!);
   if (!host || paths.length === 0) {
