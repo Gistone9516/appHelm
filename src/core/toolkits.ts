@@ -31,7 +31,7 @@ export const TOOLKITS: readonly ToolkitSpec[] = [
   },
   {
     id: "flutter", code: "F4", name: "Flutter", files: ["flutter_windows.dll"],
-    primary: "UIA (semantics 트리, 보조기술이 없으면 판 하나만 보임)",
+    primary: "좌표와 OCR (스크린리더 표지나 내레이터로도 semantics가 안 열린 앱이 있음, F-37)",
   },
   {
     id: "cef", code: "E2", name: "CEF", files: ["libcef.dll"], deep: true,

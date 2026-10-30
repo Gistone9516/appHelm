@@ -162,7 +162,7 @@ AppHelm은 배포 파일에서 툴킷을 판별할 수 있으므로 **"이 앱�
 
 ## 9. 남은 실측 후보
 
-- Flutter semantics를 켜는 공식 조건. 시스템 스크린리더 플래그(`SPI_SETSCREENREADER`)는 다른 앱에도 영향을 주는 전역 설정이라 사용자 동의 없이 바꾸지 않는다.
+- Flutter: RustDesk는 스크린리더 표지와 내레이터 모두로 semantics가 열리지 않았다(F-37). Flutter는 집중 계열이 아니므로 판별과 "좌표와 OCR" 안내까지만 한다.
 - Qt 위젯 앱(.ui)과 QML을 미리 컴파일하고 원문을 뺀 앱에서도 Qt 리소스 수집이 통하는지.
 
 - Flutter와 Chromium 계열에서 접근성을 켜는 공식 방법(Chromium은 `--force-renderer-accessibility`, Flutter는 보조기술 감지 조건)으로 다시 띄웠을 때 요소가 얼마나 늘어나는지.
