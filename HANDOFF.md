@@ -17,22 +17,24 @@
   - `invoke-window --show restore|minimize|maximize` 추가.
   - `invoke-screenshot`이 프로세스 기준으로 창을 못 찾던 버그 고침(`f4b3f2f`, SH-38).
 - **검증:** 단위 80, e2e 10, typecheck, check:boundaries, build-ps --check 모두 통과.
-- push는 `ad90443`까지 했고, `db30c61`과 이 노트는 로컬 커밋만 됨.
+- **2026-10-30 후반**
+  - 집중 계열 확정: Win32·COM·Delphi + Electron·Qt (메모리 `toolkit-focus`, `STRATEGY.md` 6장).
+  - `--show restore`가 다른 가상 데스크톱의 창을 지금 데스크톱으로 가져옴(F-36). Free Download Manager 전체 흐름이 스크린샷 없이 단계마다 3~4초.
+  - Flutter(RustDesk)는 스크린리더 표지와 내레이터로도 semantics가 안 열림(F-37). 표지와 내레이터는 되돌림.
+  - Electron 퓨즈를 `.ops.md`에 표시, `--out`의 풀리지 않은 `%TEMP%` 거부.
 
 ## 다음 단계
-1. **Free Download Manager로 조작 전체 흐름 재실측.** 지금 그 창이 다른 가상 데스크톱에 있어서(`cloaked=2`) 못 함. 사용자가 창을 지금 데스크톱으로 옮기면 `--show restore`, Ctrl+N, UIA 확인, Esc 순서로 잼.
-2. **원격 에이전트 재배포.** 노트북은 구버전일 수 있음. 새 버전은 `2026-10-30.9-fg`.
-3. **`STRATEGY.md` 6장 남은 항목.** 보호 앱(G5) 사전 판정, Delphi 설치기의 빈 이름(`*`)을 UIA 이름으로 채우기, Electron 퓨즈를 `.ops.md`에 표시, `--out`의 풀리지 않은 `%TEMP%` 거부.
-4. **Qt 수집원 다듬기.** 작업 이름이 코드(`buildDownloadDlg.newDownload()`)라 라벨로 바꾸기, zstd 리소스 읽기.
-5. **중복 로직 합치기.** click/type/screenshot/window/uia가 `src/ps/scripts`와 `agent/apphelm-agent.ps1`에 두 벌. 이번 키 안전장치도 두 곳에 따로 넣었음.
+1. **원격 에이전트 재배포.** 노트북은 구버전일 수 있음. 새 버전은 `2026-10-30.9-fg`.
+2. **Delphi 빈 이름(`*`)을 실행 중 UIA 이름으로 채우기.** 이 PC의 Delphi 앱은 설치 제거 프로그램뿐이라 실행 중 측정을 안 함. 안전한 Delphi 대상이 필요함.
+3. **보호 앱(G5) 사전 판정** (`STRATEGY.md` 6장 2번).
+4. **Qt 수집원 다듬기.** 작업 이름을 라벨로, zstd 리소스 읽기.
+5. **중복 로직 합치기.** 화면 조작 스크립트가 `src/ps/scripts`와 `agent/apphelm-agent.ps1`에 두 벌. 키 안전장치도 두 곳에 따로 넣었음.
 6. **Laya 붙이기 전 측정** (`docs/LAYA.md` 6장).
 7. **이전 세션 백로그.** 실행 경량화, 응용 계층 전수 조사 프롬프트 튜닝, skill화, 포트폴리오용 README.
 
 ## 미결 결정
-- **집중할 툴킷.** 결정 기록은 없음. 10-26 이전 세션에서 제안만 있었음(강점 Win32·COM·Delphi + 격차 Electron·Qt). 사용자 확정 필요.
-- **Flutter semantics 시험.** 남은 길은 전역 스크린리더 플래그(`SPI_SETSCREENREADER`)나 내레이터 실행. 2026-10-30 사용자가 "프로그램 실행 권한 다 줄게"라고 했으나 전역 설정까지 포함하는지는 확인 안 함.
 - **전자금융거래법.** AI에게 인증정보를 맡기는 것이 접근매체 대여인지 법률 검토 필요. 그전까지 금융 인증은 사람이 함.
-- **전역 설정 경고 3건** (`~/.claude`, 로컬 커밋 `84079e8`, push 안 함).
+- **전역 설정 경고 3건** (`~/.claude`, 로컬 커밋 `84079e8`, push 안 함). 사용자: "전역 설정은 나중에 정리할께"(2026-10-30).
   - 훅 차이: 이 PC의 settings.json에만 SessionStart `git pull` 훅이 있음. 예시 파일에 넣을지(모든 PC가 자동 pull) 정해야 함.
   - CLAUDE.md가 9,786바이트로 한도 9,700을 86바이트 넘음. 규칙 파일이라 줄이는 건 사용자 확인 후.
   - 외부 앱 2개(Discord Agents, learning-harness)는 다른 PC 경로(`C:\Users\USER\...`)라 이 PC에선 원래 없음. 이 PC에 있으면 `CLAUDE_APP_*` 환경변수로 지정.
